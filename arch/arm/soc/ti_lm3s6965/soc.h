@@ -73,12 +73,10 @@ extern "C" {
 
 #include <device.h>
 #include <misc/util.h>
-#include <drivers/rand32.h>
+#include <random/rand32.h>
 
 /* uart configuration settings */
 #if defined(CONFIG_UART_STELLARIS)
-
-#define UART_IRQ_FLAGS 0
 
 #define UART_STELLARIS_CLK_FREQ		SYSCLK_DEFAULT_IOSC_HZ
 

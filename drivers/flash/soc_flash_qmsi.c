@@ -11,6 +11,7 @@
 
 #include <flash.h>
 #include <misc/util.h>
+#include "flash_priv.h"
 
 #include "qm_flash.h"
 #include "qm_soc_regs.h"
@@ -253,6 +254,11 @@ static const struct flash_driver_api flash_qmsi_api = {
 	.write = flash_qmsi_write,
 	.erase = flash_qmsi_erase,
 	.write_protection = flash_qmsi_write_protection,
+#if defined(CONFIG_FLASH_PAGE_LAYOUT)
+	.page_layout = (flash_api_pages_layout)
+		       flash_page_layout_not_implemented,
+#endif
+	.write_block_size = 4,
 };
 
 #ifdef CONFIG_DEVICE_POWER_MANAGEMENT
@@ -330,8 +336,7 @@ static int quark_flash_init(struct device *dev)
 #endif
 
 	if (IS_ENABLED(CONFIG_SOC_FLASH_QMSI_API_REENTRANCY)) {
-		k_sem_init(RP_GET(dev), 0, UINT_MAX);
-		k_sem_give(RP_GET(dev));
+		k_sem_init(RP_GET(dev), 1, UINT_MAX);
 	}
 
 	flash_qmsi_set_power_state(dev, DEVICE_PM_ACTIVE_STATE);

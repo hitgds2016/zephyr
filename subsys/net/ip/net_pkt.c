@@ -11,8 +11,15 @@
  */
 
 #if defined(CONFIG_NET_DEBUG_NET_PKT)
-#define SYS_LOG_DOMAIN "net/net_pkt"
+#define SYS_LOG_DOMAIN "net/pkt"
 #define NET_LOG_ENABLED 1
+
+/* This enables allocation debugging but does not print so much output
+ * as that can slow things down a lot.
+ */
+#if !defined(CONFIG_NET_DEBUG_NET_PKT_ALL)
+#define NET_SYS_LOG_LEVEL 5
+#endif
 #endif
 
 #include <kernel.h>
@@ -27,16 +34,11 @@
 #include <net/net_ip.h>
 #include <net/buf.h>
 #include <net/net_pkt.h>
+#include <net/udp.h>
 
 #include "net_private.h"
-
-/* Available (free) buffers queue */
-#define NET_PKT_RX_COUNT	CONFIG_NET_PKT_RX_COUNT
-#define NET_PKT_TX_COUNT	CONFIG_NET_PKT_TX_COUNT
-#define NET_BUF_RX_COUNT	CONFIG_NET_BUF_RX_COUNT
-#define NET_BUF_TX_COUNT	CONFIG_NET_BUF_TX_COUNT
-#define NET_BUF_DATA_LEN	CONFIG_NET_BUF_DATA_SIZE
-#define NET_BUF_USER_DATA_LEN	CONFIG_NET_BUF_USER_DATA_SIZE
+#include "tcp.h"
+#include "rpl.h"
 
 #if defined(CONFIG_NET_TCP)
 #define APP_PROTO_LEN NET_TCPH_LEN
@@ -48,7 +50,7 @@
 #endif /* UDP */
 #endif /* TCP */
 
-#if defined(CONFIG_NET_IPV6) || defined(CONFIG_NET_L2_RAW_CHANNEL)
+#if defined(CONFIG_NET_IPV6) || defined(CONFIG_NET_RAW_MODE)
 #define IP_PROTO_LEN NET_IPV6H_LEN
 #else
 #if defined(CONFIG_NET_IPV4)
@@ -64,7 +66,7 @@
  * fragment. This makes possible to cast a protocol header
  * struct into memory area.
  */
-#if NET_BUF_DATA_LEN < (IP_PROTO_LEN + APP_PROTO_LEN)
+#if CONFIG_NET_BUF_DATA_SIZE < (IP_PROTO_LEN + APP_PROTO_LEN)
 #if defined(STRING2)
 #undef STRING2
 #endif
@@ -73,20 +75,17 @@
 #endif
 #define STRING2(x) #x
 #define STRING(x) STRING2(x)
-#pragma message "Data len " STRING(NET_BUF_DATA_LEN)
+#pragma message "Data len " STRING(CONFIG_NET_BUF_DATA_SIZE)
 #pragma message "Minimum len " STRING(IP_PROTO_LEN + APP_PROTO_LEN)
 #error "Too small net_buf fragment size"
 #endif
 
-K_MEM_SLAB_DEFINE(rx_pkts, sizeof(struct net_pkt), NET_PKT_RX_COUNT, 4);
-K_MEM_SLAB_DEFINE(tx_pkts, sizeof(struct net_pkt), NET_PKT_TX_COUNT, 4);
+NET_PKT_SLAB_DEFINE(rx_pkts, CONFIG_NET_PKT_RX_COUNT);
+NET_PKT_SLAB_DEFINE(tx_pkts, CONFIG_NET_PKT_TX_COUNT);
 
 /* The data fragment pool is for storing network data. */
-NET_BUF_POOL_DEFINE(rx_bufs, NET_BUF_RX_COUNT, NET_BUF_DATA_LEN,
-		    NET_BUF_USER_DATA_LEN, NULL);
-
-NET_BUF_POOL_DEFINE(tx_bufs, NET_BUF_TX_COUNT, NET_BUF_DATA_LEN,
-		    NET_BUF_USER_DATA_LEN, NULL);
+NET_PKT_DATA_POOL_DEFINE(rx_bufs, CONFIG_NET_BUF_RX_COUNT);
+NET_PKT_DATA_POOL_DEFINE(tx_bufs, CONFIG_NET_BUF_TX_COUNT);
 
 #if defined(CONFIG_NET_DEBUG_NET_PKT)
 
@@ -112,8 +111,10 @@ struct net_pkt_alloc {
 	bool is_pkt;
 };
 
-#define MAX_NET_PKT_ALLOCS (NET_PKT_RX_COUNT + NET_PKT_TX_COUNT + \
-			    NET_BUF_RX_COUNT + NET_BUF_TX_COUNT + \
+#define MAX_NET_PKT_ALLOCS (CONFIG_NET_PKT_RX_COUNT + \
+			    CONFIG_NET_PKT_TX_COUNT + \
+			    CONFIG_NET_BUF_RX_COUNT + \
+			    CONFIG_NET_BUF_TX_COUNT + \
 			    CONFIG_NET_DEBUG_NET_PKT_EXTERNALS)
 
 static struct net_pkt_alloc net_pkt_allocs[MAX_NET_PKT_ALLOCS];
@@ -253,7 +254,7 @@ void net_pkt_print_frags(struct net_pkt *pkt)
 {
 	struct net_buf *frag;
 	size_t total = 0;
-	int count = -1, frag_size = 0, ll_overhead = 0;
+	int count = 0, frag_size = 0, ll_overhead = 0;
 
 	if (!pkt) {
 		NET_INFO("pkt %p", pkt);
@@ -274,8 +275,9 @@ void net_pkt_print_frags(struct net_pkt *pkt)
 		NET_INFO("[%d] frag %p len %d size %d reserve %d "
 			 "pool %p [sz %d ud_sz %d]",
 			 count, frag, frag->len, frag_size, ll_overhead,
-			 frag->pool, frag->pool->buf_size,
-			 frag->pool->user_data_size);
+			 net_buf_pool_get(frag->pool_id),
+			 net_buf_pool_get(frag->pool_id)->buf_size,
+			 net_buf_pool_get(frag->pool_id)->user_data_size);
 
 		count++;
 
@@ -285,7 +287,7 @@ void net_pkt_print_frags(struct net_pkt *pkt)
 	NET_INFO("Total data size %zu, occupied %d bytes, ll overhead %d, "
 		 "utilization %zu%%",
 		 total, count * frag_size - count * ll_overhead,
-		 count * ll_overhead, (total * 100) / (count * frag_size));
+		 count * ll_overhead, count ? (total * 100) / (count * frag_size) : 0);
 }
 
 struct net_pkt *net_pkt_get_reserve_debug(struct k_mem_slab *slab,
@@ -518,14 +520,50 @@ static struct net_pkt *net_pkt_get(struct k_mem_slab *slab,
 	pkt = net_pkt_get_reserve(slab, net_if_get_ll_reserve(iface, addr6),
 				  timeout);
 #endif
-	if (pkt) {
+	if (pkt && slab != &rx_pkts) {
+		sa_family_t family;
+		uint16_t iface_len, data_len = 0;
+		enum net_ip_protocol proto;
+
 		net_pkt_set_context(pkt, context);
 		net_pkt_set_iface(pkt, iface);
 
-		if (context) {
-			net_pkt_set_family(pkt,
-					   net_context_get_family(context));
+		iface_len = net_if_get_mtu(iface);
+
+		family = net_context_get_family(context);
+		net_pkt_set_family(pkt, family);
+
+		if (IS_ENABLED(CONFIG_NET_IPV6) && family == AF_INET6) {
+			data_len = max(iface_len, NET_IPV6_MTU);
+			data_len -= NET_IPV6H_LEN;
 		}
+
+		if (IS_ENABLED(CONFIG_NET_IPV4) && family == AF_INET) {
+			data_len = max(iface_len, NET_IPV4_MTU);
+			data_len -= NET_IPV4H_LEN;
+		}
+
+		proto = net_context_get_ip_proto(context);
+
+		if (IS_ENABLED(CONFIG_NET_TCP) && proto == IPPROTO_TCP) {
+			data_len -= NET_TCPH_LEN;
+			data_len -= NET_TCP_MAX_OPT_SIZE;
+		}
+
+		if (IS_ENABLED(CONFIG_NET_UDP) && proto == IPPROTO_UDP) {
+			data_len -= NET_UDPH_LEN;
+
+#if defined(CONFIG_NET_RPL_INSERT_HBH_OPTION)
+			data_len -= NET_RPL_HOP_BY_HOP_LEN;
+#endif
+
+		}
+
+		if (proto == IPPROTO_ICMP || proto == IPPROTO_ICMPV6) {
+			data_len -= NET_ICMPH_LEN;
+		}
+
+		pkt->data_len = data_len;
 	}
 
 	return pkt;
@@ -703,9 +741,10 @@ void net_pkt_unref(struct net_pkt *pkt)
 	frag = pkt->frags;
 	while (frag) {
 		NET_DBG("%s (%s) [%d] frag %p ref %d frags %p (%s():%d)",
-			pool2str(frag->pool), frag->pool->name,
-			get_frees(frag->pool), frag, frag->ref - 1,
-			frag->frags, caller, line);
+			pool2str(net_buf_pool_get(frag->pool_id)),
+			net_buf_pool_get(frag->pool_id)->name,
+			get_frees(net_buf_pool_get(frag->pool_id)), frag,
+			frag->ref - 1, frag->frags, caller, line);
 
 		if (!frag->ref) {
 			const char *func_freed;
@@ -781,7 +820,9 @@ struct net_buf *net_pkt_frag_ref(struct net_buf *frag)
 
 #if defined(CONFIG_NET_DEBUG_NET_PKT)
 	NET_DBG("%s (%s) [%d] frag %p ref %d (%s():%d)",
-		pool2str(frag->pool), frag->pool->name, get_frees(frag->pool),
+		pool2str(net_buf_pool_get(frag->pool_id)),
+		net_buf_pool_get(frag->pool_id)->name,
+		get_frees(net_buf_pool_get(frag->pool_id)),
 		frag, frag->ref + 1, caller, line);
 #endif
 
@@ -803,7 +844,9 @@ void net_pkt_frag_unref(struct net_buf *frag)
 
 #if defined(CONFIG_NET_DEBUG_NET_PKT)
 	NET_DBG("%s (%s) [%d] frag %p ref %d (%s():%d)",
-		pool2str(frag->pool), frag->pool->name, get_frees(frag->pool),
+		pool2str(net_buf_pool_get(frag->pool_id)),
+		net_buf_pool_get(frag->pool_id)->name,
+		get_frees(net_buf_pool_get(frag->pool_id)),
 		frag, frag->ref - 1, caller, line);
 
 	if (frag->ref == 1) {
@@ -1122,8 +1165,8 @@ bool net_pkt_compact(struct net_pkt *pkt)
  * the buffer. It assumes that the buffer has at least one fragment.
  */
 static inline u16_t net_pkt_append_bytes(struct net_pkt *pkt,
-					const u8_t *value,
-					u16_t len, s32_t timeout)
+					 const u8_t *value,
+					 u16_t len, s32_t timeout)
 {
 	struct net_buf *frag = net_buf_frag_last(pkt->frags);
 	u16_t added_len = 0;
@@ -1157,6 +1200,8 @@ u16_t net_pkt_append(struct net_pkt *pkt, u16_t len, const u8_t *data,
 		    s32_t timeout)
 {
 	struct net_buf *frag;
+	struct net_context *ctx;
+	u16_t max_len, appended;
 
 	if (!pkt || !data) {
 		return 0;
@@ -1171,7 +1216,32 @@ u16_t net_pkt_append(struct net_pkt *pkt, u16_t len, const u8_t *data,
 		net_pkt_frag_add(pkt, frag);
 	}
 
-	return net_pkt_append_bytes(pkt, data, len, timeout);
+	ctx = net_pkt_context(pkt);
+	if (ctx) {
+		/* Make sure we don't send more data in one packet than
+		 * protocol or MTU allows when there is a context for the
+		 * packet.
+		 */
+		max_len = pkt->data_len;
+
+#if defined(CONFIG_NET_TCP)
+		if (ctx->tcp && (ctx->tcp->send_mss < max_len)) {
+			max_len = ctx->tcp->send_mss;
+		}
+#endif
+
+		if (len > max_len) {
+			len = max_len;
+		}
+	}
+
+	appended = net_pkt_append_bytes(pkt, data, len, timeout);
+
+	if (ctx) {
+		pkt->data_len -= appended;
+	}
+
+	return appended;
 }
 
 /* Helper routine to retrieve single byte from fragment and move
@@ -1205,16 +1275,11 @@ static inline struct net_buf *adjust_offset(struct net_buf *frag,
 					    u16_t offset, u16_t *pos)
 {
 	if (!frag) {
-		NET_ERR("Invalid fragment");
 		return NULL;
 	}
 
 	while (frag) {
-		if (offset == frag->len) {
-			*pos = 0;
-
-			return frag->frags;
-		} else if (offset < frag->len) {
+		if (offset < frag->len) {
 			*pos = offset;
 
 			return frag;
@@ -1224,13 +1289,11 @@ static inline struct net_buf *adjust_offset(struct net_buf *frag,
 		frag = frag->frags;
 	}
 
-	NET_ERR("Invalid offset (%u), failed to adjust", offset);
-
 	return NULL;
 }
 
 struct net_buf *net_frag_read(struct net_buf *frag, u16_t offset,
-			     u16_t *pos, u16_t len, u8_t *data)
+			      u16_t *pos, u16_t len, u8_t *data)
 {
 	u16_t copy = 0;
 
@@ -1247,7 +1310,7 @@ struct net_buf *net_frag_read(struct net_buf *frag, u16_t offset,
 			frag = net_frag_read_byte(frag, *pos, pos, NULL);
 		}
 
-		/* Error: Still reamining length to be read, but no data. */
+		/* Error: Still remaining length to be read, but no data. */
 		if (!frag && len) {
 			NET_ERR("Not enough data to read");
 			goto error;
@@ -1462,8 +1525,14 @@ static inline bool insert_data(struct net_pkt *pkt, struct net_buf *frag,
 	do {
 		u16_t count = min(len, net_buf_tailroom(frag));
 
-		/* Copy insert data */
-		memcpy(frag->data + offset, data, count);
+		if (data) {
+			/* Copy insert data */
+			memcpy(frag->data + offset, data, count);
+		} else {
+			/* If there is no data, just clear the area */
+			memset(frag->data + offset, 0, count);
+		}
+
 		net_buf_add(frag, count);
 
 		len -= count;
@@ -1484,7 +1553,10 @@ static inline bool insert_data(struct net_pkt *pkt, struct net_buf *frag,
 			return true;
 		}
 
-		data += count;
+		if (data) {
+			data += count;
+		}
+
 		offset = 0;
 
 		insert = net_pkt_get_frag(pkt, timeout);
@@ -1588,12 +1660,6 @@ int net_pkt_split(struct net_pkt *pkt, struct net_buf *orig_frag,
 		return 0;
 	}
 
-	if (len > net_buf_tailroom(*fragA)) {
-		NET_DBG("Length %u is larger than fragment size %zd",
-			len, net_buf_tailroom(*fragA));
-		return -EINVAL;
-	}
-
 	if (len > orig_frag->len) {
 		*fragA = net_pkt_get_frag(pkt, timeout);
 		if (!*fragA) {
@@ -1648,6 +1714,115 @@ void net_pkt_get_info(struct k_mem_slab **rx,
 	}
 }
 
+static int net_pkt_get_addr(struct net_pkt *pkt, bool is_src,
+			    struct sockaddr *addr, socklen_t addrlen)
+{
+	enum net_ip_protocol proto;
+	sa_family_t family;
+	u16_t port;
+
+	if (!addr || !pkt) {
+		return -EINVAL;
+	}
+
+	/* Set the family */
+	family = net_pkt_family(pkt);
+	addr->sa_family = family;
+
+	/* Examine the transport protocol */
+	if (IS_ENABLED(CONFIG_NET_IPV6) && family == AF_INET6) {
+		proto = NET_IPV6_HDR(pkt)->nexthdr;
+	} else if (IS_ENABLED(CONFIG_NET_IPV4) && family == AF_INET) {
+		proto = NET_IPV4_HDR(pkt)->proto;
+	} else {
+		return -ENOTSUP;
+	}
+
+	/* Get the source port from transport protocol header */
+	if (IS_ENABLED(CONFIG_NET_TCP) && proto == IPPROTO_TCP) {
+		struct net_tcp_hdr hdr, *tcp_hdr;
+
+		tcp_hdr = net_tcp_get_hdr(pkt, &hdr);
+		if (!tcp_hdr) {
+			return -EINVAL;
+		}
+
+		if (is_src) {
+			port = tcp_hdr->src_port;
+		} else {
+			port = tcp_hdr->dst_port;
+		}
+
+	} else if (IS_ENABLED(CONFIG_NET_UDP) && proto == IPPROTO_UDP) {
+		struct net_udp_hdr hdr, *udp_hdr;
+
+		udp_hdr = net_udp_get_hdr(pkt, &hdr);
+		if (!udp_hdr) {
+			return -EINVAL;
+		}
+
+		if (is_src) {
+			port = udp_hdr->src_port;
+		} else {
+			port = udp_hdr->dst_port;
+		}
+
+	} else {
+		return -ENOTSUP;
+	}
+
+	/* Set address and port to addr */
+	if (IS_ENABLED(CONFIG_NET_IPV6) && family == AF_INET6) {
+		struct sockaddr_in6 *addr6 = net_sin6(addr);
+
+		if (addrlen < sizeof(struct sockaddr_in6)) {
+			return -EINVAL;
+		}
+
+		if (is_src) {
+			net_ipaddr_copy(&addr6->sin6_addr,
+					&NET_IPV6_HDR(pkt)->src);
+		} else {
+			net_ipaddr_copy(&addr6->sin6_addr,
+					&NET_IPV6_HDR(pkt)->dst);
+		}
+
+		addr6->sin6_port = port;
+	} else if (IS_ENABLED(CONFIG_NET_IPV4) && family == AF_INET) {
+		struct sockaddr_in *addr4 = net_sin(addr);
+
+		if (addrlen < sizeof(struct sockaddr_in)) {
+			return -EINVAL;
+		}
+
+		if (is_src) {
+			net_ipaddr_copy(&addr4->sin_addr,
+					&NET_IPV4_HDR(pkt)->src);
+		} else {
+			net_ipaddr_copy(&addr4->sin_addr,
+					&NET_IPV4_HDR(pkt)->dst);
+		}
+
+		addr4->sin_port = port;
+	} else {
+		return -ENOTSUP;
+	}
+
+	return 0;
+}
+
+int net_pkt_get_src_addr(struct net_pkt *pkt, struct sockaddr *addr,
+			 socklen_t addrlen)
+{
+	return net_pkt_get_addr(pkt, true, addr, addrlen);
+}
+
+int net_pkt_get_dst_addr(struct net_pkt *pkt, struct sockaddr *addr,
+			 socklen_t addrlen)
+{
+	return net_pkt_get_addr(pkt, false, addr, addrlen);
+}
+
 #if defined(CONFIG_NET_DEBUG_NET_PKT)
 void net_pkt_print(void)
 {
@@ -1657,6 +1832,173 @@ void net_pkt_print(void)
 		rx_bufs.avail_count, tx_bufs.avail_count);
 }
 #endif /* CONFIG_NET_DEBUG_NET_PKT */
+
+struct net_buf *net_frag_get_pos(struct net_pkt *pkt,
+				 u16_t offset,
+				 u16_t *pos)
+{
+	struct net_buf *frag;
+
+	frag = net_frag_skip(pkt->frags, offset, pos, 0);
+	if (!frag) {
+		return NULL;
+	}
+
+	return frag;
+}
+
+#if defined(CONFIG_NET_DEBUG_NET_PKT)
+static void too_short_msg(char *msg, struct net_pkt *pkt, u16_t offset,
+			  size_t extra_len)
+{
+	size_t total_len = net_buf_frags_len(pkt->frags);
+	size_t hdr_len = net_pkt_ip_hdr_len(pkt) + net_pkt_ipv6_ext_len(pkt);
+
+	if (total_len != (hdr_len + extra_len)) {
+		/* Print info how many bytes past the end we tried to print */
+		NET_ERR("%s: IP hdr %d ext len %d offset %d pos %zd total %zd",
+			msg, net_pkt_ip_hdr_len(pkt),
+			net_pkt_ipv6_ext_len(pkt),
+			offset, hdr_len + extra_len, total_len);
+	}
+}
+#else
+#define too_short_msg(...)
+#endif
+
+struct net_icmp_hdr *net_pkt_icmp_data(struct net_pkt *pkt)
+{
+	struct net_buf *frag;
+	u16_t offset;
+
+	frag = net_frag_get_pos(pkt,
+				net_pkt_ip_hdr_len(pkt) +
+				net_pkt_ipv6_ext_len(pkt),
+				&offset);
+	if (!frag) {
+		/* We tried to read past the end of the data */
+		too_short_msg("icmp data", pkt, offset, 0);
+		return NULL;
+	}
+
+	return (struct net_icmp_hdr *)(frag->data + offset);
+}
+
+u8_t *net_pkt_icmp_opt_data(struct net_pkt *pkt, size_t opt_len)
+{
+	struct net_buf *frag;
+	u16_t offset;
+
+	frag = net_frag_get_pos(pkt,
+				net_pkt_ip_hdr_len(pkt) +
+				net_pkt_ipv6_ext_len(pkt) + opt_len,
+				&offset);
+	if (!frag) {
+		/* We tried to read past the end of the data */
+		too_short_msg("icmp opt data", pkt, offset, opt_len);
+		return NULL;
+	}
+
+	return frag->data + offset;
+}
+
+struct net_udp_hdr *net_pkt_udp_data(struct net_pkt *pkt)
+{
+	struct net_buf *frag;
+	u16_t offset;
+
+	frag = net_frag_get_pos(pkt,
+				net_pkt_ip_hdr_len(pkt) +
+				net_pkt_ipv6_ext_len(pkt),
+				&offset);
+	if (!frag) {
+		/* We tried to read past the end of the data */
+		too_short_msg("udp data", pkt, offset, 0);
+		return NULL;
+	}
+
+	return (struct net_udp_hdr *)(frag->data + offset);
+}
+
+struct net_tcp_hdr *net_pkt_tcp_data(struct net_pkt *pkt)
+{
+	struct net_buf *frag;
+	u16_t offset;
+
+	frag = net_frag_get_pos(pkt,
+				net_pkt_ip_hdr_len(pkt) +
+				net_pkt_ipv6_ext_len(pkt),
+				&offset);
+	if (!frag) {
+		/* We tried to read past the end of the data */
+		too_short_msg("tcp data", pkt, offset, 0);
+		return NULL;
+	}
+
+	return (struct net_tcp_hdr *)(frag->data + offset);
+}
+
+struct net_pkt *net_pkt_clone(struct net_pkt *pkt, s32_t timeout)
+{
+	struct net_pkt *clone;
+	struct net_buf *frag;
+	u16_t pos;
+
+	if (!pkt) {
+		return NULL;
+	}
+
+	clone = net_pkt_get_reserve(pkt->slab, 0, timeout);
+	if (!clone) {
+		return NULL;
+	}
+
+	clone->frags = NULL;
+
+	if (pkt->frags) {
+		clone->frags = net_pkt_copy_all(pkt, 0, timeout);
+		if (!clone->frags) {
+			net_pkt_unref(clone);
+			return NULL;
+		}
+	}
+
+	clone->context = pkt->context;
+	clone->token = pkt->token;
+	clone->iface = pkt->iface;
+
+	if (clone->frags) {
+		frag = net_frag_get_pos(clone, net_pkt_ip_hdr_len(pkt), &pos);
+
+		net_pkt_set_appdata(clone, frag->data + pos);
+		net_pkt_set_appdatalen(clone, net_pkt_appdatalen(pkt));
+
+		/* The link header pointers are only usable if there is
+		 * a fragment that we copied because those pointers point
+		 * to start of the fragment which we do not have right now.
+		 */
+		memcpy(&clone->lladdr_src, &pkt->lladdr_src,
+		       sizeof(clone->lladdr_src));
+		memcpy(&clone->lladdr_dst, &pkt->lladdr_dst,
+		       sizeof(clone->lladdr_dst));
+	}
+
+	net_pkt_set_next_hdr(clone, NULL);
+	net_pkt_set_ip_hdr_len(clone, net_pkt_ip_hdr_len(pkt));
+
+	net_pkt_set_family(clone, net_pkt_family(pkt));
+
+#if defined(CONFIG_NET_IPV6)
+	clone->ipv6_hop_limit = pkt->ipv6_hop_limit;
+	clone->ipv6_ext_len = pkt->ipv6_ext_len;
+	clone->ipv6_ext_opt_len = pkt->ipv6_ext_opt_len;
+	clone->ipv6_prev_hdr_start = pkt->ipv6_prev_hdr_start;
+#endif
+
+	NET_DBG("Cloned %p to %p", pkt, clone);
+
+	return clone;
+}
 
 void net_pkt_init(void)
 {

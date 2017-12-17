@@ -36,7 +36,8 @@ Hardware
 - SMA RF Connector
 - RF regulatory certified
 - Serial Flash for OTA firmware upgrades
-- On board NXP FXOS8700CQ digital sensor, 3D Accelerometer (±2g/±4g/±8g) + 3D
+- On board NXP FXOS8700CQ digital sensor, 3D Accelerometer ( |plusminus| 2g/
+  |plusminus| 4g/ |plusminus| 8g) + 3D
   Magnetometer
 - OpenSDA and JTAG debug
 
@@ -67,6 +68,8 @@ The frdm_kw41z board configuration supports the following hardware features:
 +-----------+------------+-------------------------------------+
 | I2C       | on-chip    | i2c                                 |
 +-----------+------------+-------------------------------------+
+| ADC       | on-chip    | adc                                 |
++-----------+------------+-------------------------------------+
 | UART      | on-chip    | serial port-polling;                |
 |           |            | serial port-interrupt               |
 +-----------+------------+-------------------------------------+
@@ -96,6 +99,8 @@ currently enabled (PORTA/GPIOA and PORTC/GPIOC) for the FRDM-KW41Z board.
 | PTA19 | GPIO        | Green LED                 |
 +-------+-------------+---------------------------+
 | PTA18 | GPIO        | Blue LED                  |
++-------+-------------+---------------------------+
+| PTB2  | ADC         | ADC0 channel 3            |
 +-------+-------------+---------------------------+
 | PTC2  | I2C1_SCL    | I2C / FXOS8700            |
 +-------+-------------+---------------------------+
@@ -128,32 +133,46 @@ The FRDM-KW41Z includes the :ref:`nxp_opensda` serial and debug adapter built
 into the board to provide debugging, flash programming, and serial
 communication over USB.
 
-The :ref:`nxp_opensda_pyocd` tools do not yet support the KW41Z SoC.
+To use the pyOCD tools with OpenSDA, follow the instructions in the
+:ref:`nxp_opensda_pyocd` page using the `DAPLink FRDM-KW41Z Firmware`_. The
+pyOCD tools are not the default for this board, therefore it is necessary to
+set ``OPENSDA_FW=daplink`` explicitly when using the default flash and debug
+mechanisms.
+
+.. note::
+   pyOCD added support for KW41Z after support for this board was added to
+   Zephyr, so you may need to build pyOCD from source based on the current
+   master branch (f21d43d).
 
 To use the Segger J-Link tools with OpenSDA, follow the instructions in the
 :ref:`nxp_opensda_jlink` page using the `Segger J-Link OpenSDA V2.1 Firmware`_.
+The Segger J-Link tools are the default for this board, therefore it is not
+necessary to set ``OPENSDA_FW=jlink`` explicitly in the environment before
+programming and debugging.
+
+With these mechanisms, applications for the ``frdm_kw41z`` board
+configuration can be built and debugged in the usual way (see
+:ref:`build_an_application` and :ref:`application_run` for more
+details).
 
 Flashing
 ========
 
 The Segger J-Link firmware does not support command line flashing, therefore
-the ``make flash`` build target is not supported.
+the usual ``flash`` build system target is not supported.
 
 Debugging
 =========
 
 This example uses the :ref:`hello_world` sample with the
-:ref:`nxp_opensda_jlink` tools. Use the ``make debug`` build target to build
+:ref:`nxp_opensda_jlink` tools. Run the following to build
 your Zephyr application, invoke the J-Link GDB server, attach a GDB client, and
 program your Zephyr application to flash. It will leave you at a gdb prompt.
 
-.. code-block:: console
-
-   $ cd <zephyr_root_path>
-   $ . zephyr-env.sh
-   $ cd samples/hello_world/
-   $ make BOARD=frdm_kw41z DEBUG_SCRIPT=jlink.sh debug
-
+.. zephyr-app-commands::
+   :zephyr-app: samples/hello_world
+   :board: frdm_kw41z
+   :goals: debug
 
 .. _FRDM-KW41Z Website:
    http://www.nxp.com/products/microcontrollers-and-processors/more-processors/application-specific-mcus-mpus/bluetooth-low-energy-ble/nxp-freedom-development-kit-for-kinetis-kw41z-31z-21z-mcus:FRDM-KW41Z
@@ -172,6 +191,9 @@ program your Zephyr application to flash. It will leave you at a gdb prompt.
 
 .. _KW41Z Reference Manual:
    http://www.nxp.com/assets/documents/data/en/reference-manuals/MKW41Z512RM.pdf
+
+.. _DAPLink FRDM-KW41Z Firmware:
+   http://www.nxp.com/assets/downloads/data/en/reference-applications/OpenSDAv2.2_DAPLink_frdmkw41z_rev0241.zip
 
 .. _Segger J-Link OpenSDA V2.1 Firmware:
    https://www.segger.com/downloads/jlink/OpenSDA_V2_1.bin

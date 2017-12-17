@@ -24,8 +24,9 @@ config MPU_STACK_GUARD
 config ARM_MPU
 	bool "ARM MPU Support"
 	depends on CPU_HAS_MPU
-	depends on SOC_FAMILY_ARM || SOC_FAMILY_STM32 || SOC_FAMILY_NRF5
+	depends on SOC_FAMILY_ARM || SOC_FAMILY_STM32 || SOC_FAMILY_NRF5 || SOC_FAMILY_IMX
 	select ARM_CORE_MPU
+	select ARCH_HAS_EXECUTABLE_PAGE_BIT
 	default n
 	help
 	  MCU has ARM MPU
@@ -35,6 +36,14 @@ config NXP_MPU
 	depends on CPU_HAS_MPU
 	depends on SOC_FAMILY_KINETIS
 	select ARM_CORE_MPU
+	select ARCH_HAS_EXECUTABLE_PAGE_BIT
 	default n
 	help
 	  MCU has NXP MPU
+
+config MPU_ALLOW_FLASH_WRITE
+	bool "Add MPU access to write to flash"
+	depends on ARM_MPU || NXP_MPU
+	default n
+	help
+	  Enable this to allow MPU RWX access to flash memory

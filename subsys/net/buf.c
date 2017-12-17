@@ -42,6 +42,19 @@
 #define WARN_ALLOC_INTERVAL K_FOREVER
 #endif
 
+/* Linker-defined symbol bound to the static pool structs */
+extern struct net_buf_pool _net_buf_pool_list[];
+
+struct net_buf_pool *net_buf_pool_get(int id)
+{
+	return &_net_buf_pool_list[id];
+}
+
+static int pool_id(struct net_buf_pool *pool)
+{
+	return pool - _net_buf_pool_list;
+}
+
 /* Helpers to access the storage array, since we don't have access to its
  * type at this point anymore.
  */
@@ -51,6 +64,15 @@
 #define UNINIT_BUF(pool, n) (struct net_buf *)(((u8_t *)(pool->__bufs)) + \
 					       ((n) * BUF_SIZE(pool)))
 
+int net_buf_id(struct net_buf *buf)
+{
+	struct net_buf_pool *pool = net_buf_pool_get(buf->pool_id);
+	u8_t *pool_start = (u8_t *)pool->__bufs;
+	u8_t *buf_ptr = (u8_t *)buf;
+
+	return (buf_ptr - pool_start) / BUF_SIZE(pool);
+}
+
 static inline struct net_buf *pool_get_uninit(struct net_buf_pool *pool,
 					      u16_t uninit_count)
 {
@@ -58,7 +80,7 @@ static inline struct net_buf *pool_get_uninit(struct net_buf_pool *pool,
 
 	buf = UNINIT_BUF(pool, pool->buf_count - uninit_count);
 
-	buf->pool = pool;
+	buf->pool_id = pool_id(pool);
 	buf->size = pool->buf_size;
 
 	return buf;
@@ -162,8 +184,8 @@ success:
 	net_buf_reset(buf);
 
 #if defined(CONFIG_NET_BUF_POOL_USAGE)
-	buf->pool->avail_count--;
-	NET_BUF_ASSERT(buf->pool->avail_count >= 0);
+	pool->avail_count--;
+	NET_BUF_ASSERT(pool->avail_count >= 0);
 #endif
 
 	return buf;
@@ -211,6 +233,56 @@ void net_buf_reserve(struct net_buf *buf, size_t reserve)
 	buf->data = buf->__buf + reserve;
 }
 
+void net_buf_slist_put(sys_slist_t *list, struct net_buf *buf)
+{
+	struct net_buf *tail;
+	unsigned int key;
+
+	NET_BUF_ASSERT(list);
+	NET_BUF_ASSERT(buf);
+
+	for (tail = buf; tail->frags; tail = tail->frags) {
+		tail->flags |= NET_BUF_FRAGS;
+	}
+
+	key = irq_lock();
+	sys_slist_append_list(list, &buf->node, &tail->node);
+	irq_unlock(key);
+}
+
+struct net_buf *net_buf_slist_get(sys_slist_t *list)
+{
+	struct net_buf *buf, *frag;
+	unsigned int key;
+
+	NET_BUF_ASSERT(list);
+
+	key = irq_lock();
+	buf = (void *)sys_slist_get(list);
+	irq_unlock(key);
+
+	if (!buf) {
+		return NULL;
+	}
+
+	/* Get any fragments belonging to this buffer */
+	for (frag = buf; (frag->flags & NET_BUF_FRAGS); frag = frag->frags) {
+		key = irq_lock();
+		frag->frags = (void *)sys_slist_get(list);
+		irq_unlock(key);
+
+		NET_BUF_ASSERT(frag->frags);
+
+		/* The fragments flag is only for list-internal usage */
+		frag->flags &= ~NET_BUF_FRAGS;
+	}
+
+	/* Mark the end of the fragment list */
+	frag->frags = NULL;
+
+	return buf;
+}
+
 void net_buf_put(struct k_fifo *fifo, struct net_buf *buf)
 {
 	struct net_buf *tail;
@@ -235,6 +307,7 @@ void net_buf_unref(struct net_buf *buf)
 
 	while (buf) {
 		struct net_buf *frags = buf->frags;
+		struct net_buf_pool *pool;
 
 #if defined(CONFIG_NET_BUF_LOG)
 		if (!buf->ref) {
@@ -243,8 +316,8 @@ void net_buf_unref(struct net_buf *buf)
 			return;
 		}
 #endif
-		NET_BUF_DBG("buf %p ref %u pool %p frags %p", buf, buf->ref,
-			    buf->pool, buf->frags);
+		NET_BUF_DBG("buf %p ref %u pool_id %u frags %p", buf, buf->ref,
+			    buf->pool_id, buf->frags);
 
 		if (--buf->ref > 0) {
 			return;
@@ -252,13 +325,15 @@ void net_buf_unref(struct net_buf *buf)
 
 		buf->frags = NULL;
 
+		pool = net_buf_pool_get(buf->pool_id);
+
 #if defined(CONFIG_NET_BUF_POOL_USAGE)
-		buf->pool->avail_count++;
-		NET_BUF_ASSERT(buf->pool->avail_count <= buf->pool->buf_count);
+		pool->avail_count++;
+		NET_BUF_ASSERT(pool->avail_count <= pool->buf_count);
 #endif
 
-		if (buf->pool->destroy) {
-			buf->pool->destroy(buf);
+		if (pool->destroy) {
+			pool->destroy(buf);
 		} else {
 			net_buf_destroy(buf);
 		}
@@ -271,19 +346,22 @@ struct net_buf *net_buf_ref(struct net_buf *buf)
 {
 	NET_BUF_ASSERT(buf);
 
-	NET_BUF_DBG("buf %p (old) ref %u pool %p",
-		    buf, buf->ref, buf->pool);
+	NET_BUF_DBG("buf %p (old) ref %u pool_id %u",
+		    buf, buf->ref, buf->pool_id);
 	buf->ref++;
 	return buf;
 }
 
 struct net_buf *net_buf_clone(struct net_buf *buf, s32_t timeout)
 {
+	struct net_buf_pool *pool;
 	struct net_buf *clone;
 
 	NET_BUF_ASSERT(buf);
 
-	clone = net_buf_alloc(buf->pool, timeout);
+	pool = net_buf_pool_get(buf->pool_id);
+
+	clone = net_buf_alloc(pool, timeout);
 	if (!clone) {
 		return NULL;
 	}

@@ -17,7 +17,7 @@ some highlights of the STM32F469I-DISCO board:
 
        - ST-LINK/V2-1 USB connector
        - User USB FS connector
-       - VIN from Arduino™ compatible connectors
+       - VIN from Arduino* compatible connectors
 
 - Four user LEDs
 - Two push-buttons: USER and RESET
@@ -29,7 +29,7 @@ some highlights of the STM32F469I-DISCO board:
 - I2C extension connector
 - 4Mx32bit SDRAM
 - 128-Mbit Quad-SPI NOR Flash
-- Expansion connectors and Arduino™ UNO V3 connectors
+- Expansion connectors and Arduino UNO V3 connectors
 
 .. image:: img/en.stm32f469i-disco.jpg
      :width: 457px
@@ -45,7 +45,7 @@ Hardware
 STM32F469I-DISCO Discovery kit provides the following hardware components:
 
 - STM32F469NIH6 in BGA216 package
-- ARM®32-bit Cortex®-M4 CPU with FPU
+- ARM |reg| 32-bit Cortex |reg| -M4 CPU with FPU
 - 180 MHz max CPU frequency
 - VDD from 1.8 V to 3.6 V
 - 2 MB Flash
@@ -53,7 +53,7 @@ STM32F469I-DISCO Discovery kit provides the following hardware components:
 - GPIO with external interrupt capability
 - LCD parallel interface, 8080/6800 modes
 - LCD TFT controller supporting up to XGA resolution
-- MIPI® DSI host controller supporting up to 720p 30Hz resolution
+- MIPI |reg|  DSI host controller supporting up to 720p 30Hz resolution
 - 3x12-bit ADC with 24 channels
 - 2x12-bit D/A converters
 - RTC
@@ -108,7 +108,7 @@ The default configuration can be found in the defconfig file:
 Pin Mapping
 ===========
 
-STM32F469I-DISCO Discovry kit has 9 GPIO controllers. These controllers are responsible for pin muxing,
+STM32F469I-DISCO Discovery kit has 9 GPIO controllers. These controllers are responsible for pin muxing,
 input/output, pull-up, etc.
 
 For mode details please refer to `32F469IDISCOVERY board User Manual`_.
@@ -142,6 +142,10 @@ Default settings are 115200 8N1.
 Programming and Debugging
 *************************
 
+Applications for the ``stm32f469i_disco`` board configuration can be built and
+flashed in the usual way (see :ref:`build_an_application` and
+:ref:`application_run` for more details).
+
 Flashing
 ========
 
@@ -151,27 +155,15 @@ This interface is supported by the openocd version included in Zephyr SDK.
 Flashing an application to STM32F469I-DISCO
 -------------------------------------------
 
-The sample application :ref:`hello_world` is being used in this tutorial:
+First, connect the STM32F469I-DISCO Discovery kit to your host computer using
+the USB port to prepare it for flashing. Then build and flash your application.
 
-.. code-block:: console
+Here is an example for the :ref:`hello_world` application.
 
-   $<zephyr_root_path>/samples/hello_world
-
-To build the Zephyr kernel and application, enter:
-
-.. code-block:: console
-
-   $ cd <zephyr_root_path>
-   $ source zephyr-env.sh
-   $ cd $ZEPHYR_BASE/samples/hello_world/
-   $ make BOARD=stm32f469i_disco
-
-Connect the STM32F469I-DISCO Discovery kit to your host computer using the USB port.
-Then, enter the following command:
-
-.. code-block:: console
-
-   $ make BOARD=stm32f469i_disco flash
+.. zephyr-app-commands::
+   :zephyr-app: samples/hello_world
+   :board: stm32f469i_disco
+   :goals: build flash
 
 Run a serial host program to connect with your board:
 
@@ -179,7 +171,7 @@ Run a serial host program to connect with your board:
 
    $ minicom -D /dev/ttyACM0
 
-You should see the following message:
+You should see the following message on the console:
 
 .. code-block:: console
 
@@ -189,11 +181,13 @@ You should see the following message:
 Debugging
 =========
 
-Access gdb with the following make command:
+You can debug an application in the usual way.  Here is an example for the
+:ref:`hello_world` application.
 
-.. code-block:: console
-
-   $ make BOARD=stm32f469i_disco debug
+.. zephyr-app-commands::
+   :zephyr-app: samples/hello_world
+   :board: stm32f469i_disco
+   :goals: debug
 
 
 .. _32F469IDISCOVERY website:

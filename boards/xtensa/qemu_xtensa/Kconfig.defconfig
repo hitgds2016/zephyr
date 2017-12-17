@@ -4,10 +4,10 @@
 
 if BOARD_QEMU_XTENSA
 
+config BUILD_OUTPUT_BIN
+        default n
+
 config BOARD
 	default qemu_xtensa
-
-config SIMULATOR_XTENSA
-        def_bool y
 
 endif # BOARD_QEMU_XTENSA

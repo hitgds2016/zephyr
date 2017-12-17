@@ -4,20 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define SYS_LOG_DOMAIN "sample-unified"
+#define SYS_LOG_DOMAIN "syslogger"
 
 #include <zephyr.h>
 #include <misc/printk.h>
 #include <logging/sys_log.h>
 #include <stdio.h>
-#include <misc/ring_buffer.h>
+#include <ring_buffer.h>
 
 #define LOG_BUF_SIZE (512)
 
 /**
  * @file
  * @brief using logger hook demo
- * unified version of logger hook usage demo
  */
 
 u32_t logger_buffer[LOG_BUF_SIZE];

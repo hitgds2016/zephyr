@@ -17,12 +17,15 @@
 #include <nrf.h>
 #include <device.h>
 #include <misc/util.h>
-#include <drivers/rand32.h>
+#include <random/rand32.h>
 
 #endif /* !_ASMLANGUAGE */
 
 #define NRF51_POWER_RAMON_ADDRESS              0x40000524
 #define NRF51_POWER_RAMONB_ADDRESS             0x40000554
 #define NRF51_POWER_RAMONx_RAMxON_ONMODE_Msk   0x3
+
+#define FLASH_PAGE_ERASE_MAX_TIME_US 22300UL
+#define FLASH_PAGE_MAX_CNT 256UL
 
 #endif /* _NORDICSEMI_NRF51_SOC_H_ */

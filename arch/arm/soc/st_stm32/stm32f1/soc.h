@@ -9,7 +9,7 @@
  *
  * Based on reference manual:
  *   STM32F101xx, STM32F102xx, STM32F103xx, STM32F105xx and STM32F107xx
- *   advanced ARM ® -based 32-bit MCUs
+ *   advanced ARM(r)-based 32-bit MCUs
  *
  * Chapter 3.3: Memory Map
  */
@@ -26,28 +26,31 @@
 
 #include <device.h>
 #include <misc/util.h>
-#include <drivers/rand32.h>
+#include <random/rand32.h>
 
 #include <stm32f1xx.h>
 
-/* IO pin functions are mostly common across STM32 devices. Notable
- * exception is STM32F1 as these MCUs do not have registers for
- * configuration of pin's alternate function. The configuration is
- * done implicitly by setting specific mode and config in MODE and CNF
- * registers for particular pin.
- */
-enum stm32f10x_pin_config_mode {
-	STM32F10X_PIN_CONFIG_BIAS_HIGH_IMPEDANCE,
-	STM32F10X_PIN_CONFIG_BIAS_PULL_UP,
-	STM32F10X_PIN_CONFIG_BIAS_PULL_DOWN,
-	STM32F10X_PIN_CONFIG_ANALOG,
-	STM32F10X_PIN_CONFIG_DRIVE_OPEN_DRAIN,
-	STM32F10X_PIN_CONFIG_DRIVE_PUSH_PULL,
-	STM32F10X_PIN_CONFIG_AF_PUSH_PULL,
-	STM32F10X_PIN_CONFIG_AF_OPEN_DRAIN,
-};
 
 #include "soc_irq.h"
+
+#ifdef CONFIG_SERIAL_HAS_DRIVER
+#include <stm32f1xx_ll_usart.h>
+#endif
+
+#ifdef CONFIG_CLOCK_CONTROL_STM32_CUBE
+#include <stm32f1xx_ll_utils.h>
+#include <stm32f1xx_ll_bus.h>
+#include <stm32f1xx_ll_rcc.h>
+#include <stm32f1xx_ll_system.h>
+#endif /* CONFIG_CLOCK_CONTROL_STM32_CUBE */
+
+#ifdef CONFIG_I2C
+#include <stm32f1xx_ll_i2c.h>
+#endif
+
+#ifdef CONFIG_IWDG_STM32
+#include <stm32f1xx_ll_iwdg.h>
+#endif
 
 #endif /* !_ASMLANGUAGE */
 

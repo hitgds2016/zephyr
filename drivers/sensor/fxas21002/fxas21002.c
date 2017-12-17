@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <fxas21002.h>
+#include "fxas21002.h"
 #include <misc/util.h>
 #include <misc/__assert.h>
 
@@ -265,8 +265,7 @@ static int fxas21002_init(struct device *dev)
 	k_busy_wait(transition_time);
 
 
-	k_sem_init(&data->sem, 0, UINT_MAX);
-	k_sem_give(&data->sem);
+	k_sem_init(&data->sem, 1, UINT_MAX);
 
 	SYS_LOG_DBG("Init complete");
 

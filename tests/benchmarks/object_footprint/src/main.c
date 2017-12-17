@@ -30,7 +30,7 @@ typedef void * (*pfunc) (void *);
 
 /* stack used by thread */
 #ifdef CONFIG_OBJECTS_THREAD
-static char __stack pStack[THREAD_STACK_SIZE];
+static K_THREAD_STACK_DEFINE(pStack, THREAD_STACK_SIZE);
 static struct k_thread objects_thread;
 #endif
 
@@ -116,7 +116,7 @@ void main(void)
 #endif
 
 #ifdef CONFIG_OBJECTS_THREAD
-	/* start a trivial fiber */
+	/* start a trivial thread */
 	k_thread_create(&objects_thread, pStack, THREAD_STACK_SIZE,
 			thread_entry, MESSAGE, (void *)func_array,
 			NULL, 10, 0, K_NO_WAIT);

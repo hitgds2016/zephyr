@@ -1,5 +1,3 @@
-/* main.c - load/store portion of FPU sharing test */
-
 /*
  * Copyright (c) 2011-2014 Wind River Systems, Inc.
  *
@@ -7,7 +5,9 @@
  */
 
 /*
- * DESCRIPTION
+ * @file
+ * load/store portion of FPU sharing test
+ *
  * This module implements the load/store portion of the FPU sharing test. This
  * version of this test utilizes a pair of tasks.
  *
@@ -24,8 +24,8 @@
  * this test should be enhanced to ensure that the architectures' _Swap()
  * routine doesn't context switch more registers that it needs to (which would
  * represent a performance issue).  For example, on the IA-32, the test should
- * issue a fiber_fp_disable() from main(), and then indicate that only x87 FPU
- * registers will be utilized (fiber_fp_enable()).  The fiber should continue
+ * issue a k_fp_disable() from main(), and then indicate that only x87 FPU
+ * registers will be utilized (k_fp_enable()).  The thread should continue
  * to load ALL non-integer registers, but main() should validate that only the
  * x87 FPU registers are being saved/restored.
  */
@@ -47,20 +47,19 @@
 #include <zephyr.h>
 
 #if defined(CONFIG_ISA_IA32)
-  #if defined(__GNUC__)
-    #include <float_regs_x86_gcc.h>
-  #else
-    #include <float_regs_x86_other.h>
-  #endif /* __GNUC__ */
+#if defined(__GNUC__)
+#include "float_regs_x86_gcc.h"
+#else
+#include "float_regs_x86_other.h"
+#endif /* __GNUC__ */
 #elif defined(CONFIG_CPU_CORTEX_M4)
-  #if defined(__GNUC__)
-    #include <float_regs_arm_gcc.h>
-  #else
-    #include <float_regs_arm_other.h>
-  #endif /* __GNUC__ */
+#if defined(__GNUC__)
+#include "float_regs_arm_gcc.h"
+#else
+#include "float_regs_arm_other.h"
+#endif /* __GNUC__ */
 #endif
 
-#include <arch/cpu.h>
 #include <tc_util.h>
 #include "float_context.h"
 #include <stddef.h>
@@ -68,8 +67,8 @@
 
 #define MAX_TESTS 500
 #define STACKSIZE 2048
-#define HI_PRI	5
-#define LO_PRI	10
+#define HI_PRI  5
+#define LO_PRI  10
 
 /* space for float register load/store area used by low priority task */
 
@@ -141,7 +140,7 @@ void load_store_low(void)
 
 	/* Keep cranking forever, or until an error is detected. */
 
-	for (load_store_low_count = 0; ; load_store_low_count++) {
+	for (load_store_low_count = 0;; load_store_low_count++) {
 
 		/*
 		 * Clear store buffer to erase all traces of any previous
@@ -195,12 +194,12 @@ void load_store_low(void)
 		for (i = 0; i < SIZEOF_FP_REGISTER_SET; i++) {
 			if (store_ptr[i] != init_byte) {
 				TC_ERROR("load_store_low found 0x%x instead "
-					"of 0x%x @ offset 0x%x\n",
-						store_ptr[i],
-						init_byte, i);
+					 "of 0x%x @ offset 0x%x\n",
+					 store_ptr[i],
+					 init_byte, i);
 				TC_ERROR("Discrepancy found during "
-						"iteration %d\n",
-						load_store_low_count);
+					 "iteration %d\n",
+					 load_store_low_count);
 				fpu_sharing_error = 1;
 			}
 			init_byte++;
@@ -319,9 +318,9 @@ void load_store_high(void)
 
 		if ((++load_store_high_count % 100) == 0) {
 			PRINT_DATA("Load and store OK after %u (high) "
-					"+ %u (low) tests\n",
-					load_store_high_count,
-					load_store_low_count);
+				   "+ %u (low) tests\n",
+				   load_store_high_count,
+				   load_store_low_count);
 		}
 
 		/* terminate testing if specified limit has been reached */
@@ -335,19 +334,19 @@ void load_store_high(void)
 }
 
 #if defined(CONFIG_ISA_IA32)
-#define THREAD_FP_FLAGS	(K_FP_REGS | K_SSE_REGS)
+#define THREAD_FP_FLAGS (K_FP_REGS | K_SSE_REGS)
 #else
-#define THREAD_FP_FLAGS	(K_FP_REGS)
+#define THREAD_FP_FLAGS (K_FP_REGS)
 #endif
 
 K_THREAD_DEFINE(load_low, STACKSIZE, load_store_low, NULL, NULL, NULL,
-			LO_PRI, THREAD_FP_FLAGS, K_NO_WAIT);
+		LO_PRI, THREAD_FP_FLAGS, K_NO_WAIT);
 
 K_THREAD_DEFINE(load_high, STACKSIZE, load_store_high, NULL, NULL, NULL,
-			HI_PRI, THREAD_FP_FLAGS, K_NO_WAIT);
+		HI_PRI, THREAD_FP_FLAGS, K_NO_WAIT);
 
 K_THREAD_DEFINE(pi_low, STACKSIZE, calculate_pi_low, NULL, NULL, NULL,
-			LO_PRI, THREAD_FP_FLAGS, K_NO_WAIT);
+		LO_PRI, THREAD_FP_FLAGS, K_NO_WAIT);
 
 K_THREAD_DEFINE(pi_high, STACKSIZE, calculate_pi_high, NULL, NULL, NULL,
-			HI_PRI, THREAD_FP_FLAGS, K_NO_WAIT);
+		HI_PRI, THREAD_FP_FLAGS, K_NO_WAIT);

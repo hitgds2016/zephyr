@@ -1,4 +1,4 @@
-# Kconfig - flash driver configuration options
+# Kconfig - Flash driver configuration options
 
 #
 # Copyright (c) 2016 Intel Corporation
@@ -7,14 +7,21 @@
 #
 
 #
-# flash driver
+# Flash driver
 #
 menuconfig FLASH
 	bool
-	prompt "flash hardware support"
+	prompt "Flash hardware support"
 	default n
 	help
 	  Enable support for the flash hardware.
+
+config FLASH_PAGE_LAYOUT
+	bool "API for retrieving the layout of pages"
+	depends on FLASH && FLASH_HAS_PAGE_LAYOUT
+	default n
+	help
+	  Enables API for retrieving the layout of flash memory pages.
 
 config SPI_FLASH_W25QXXDV
 	bool
@@ -23,13 +30,13 @@ config SPI_FLASH_W25QXXDV
 
 config SPI_FLASH_W25QXXDV_SPI_NAME
 	string
-	prompt "spi controller device name"
+	prompt "SPI controller device name"
 	depends on SPI_FLASH_W25QXXDV
 	default ""
 
 config SPI_FLASH_W25QXXDV_DRV_NAME
 	string
-	prompt "spi flash device name"
+	prompt "SPI flash device name"
 	depends on SPI_FLASH_W25QXXDV
 	default "W25QXXDV"
 
@@ -52,14 +59,14 @@ config SPI_FLASH_W25QXXDV_SPI_FREQ_0
 	  clock.
 
 config	SPI_FLASH_W25QXXDV_SPI_SLAVE
-	int "SPI slave linked to spi flash"
+	int "SPI slave linked to SPI flash"
 	depends on SPI_FLASH_W25QXXDV
 	help
 	  This option sets the SPI slave number the SPI controller has to switch
 	  to when dealing with WinBond SPI flash chip.
 
 config SPI_FLASH_W25QXXDV_FLASH_SIZE
-	int "flash size in bytes"
+	int "Flash size in bytes"
 	depends on SPI_FLASH_W25QXXDV
 	default 2097152
 	help
@@ -89,7 +96,7 @@ config SOC_FLASH_QMSI_DEV_NAME
 	  Specify the device name for the flash driver.
 
 config SOC_FLASH_QMSI_CLK_COUNT_US
-	int "system clk count per microsecond"
+	int "System clk count per microsecond"
 	depends on SOC_FLASH_QMSI
 	default 32
 	help
@@ -120,6 +127,7 @@ config SOC_FLASH_NRF5
 	bool "Nordic Semiconductor nRF5X flash driver"
 	depends on FLASH && SOC_FAMILY_NRF5
 	default n
+	select FLASH_HAS_PAGE_LAYOUT
 	help
 	  Enables Nordic Semiconductor nRF5X flash driver.
 
@@ -129,6 +137,13 @@ config SOC_FLASH_NRF5_DEV_NAME
 	default "NRF5_FLASH"
 	help
 	  Specify the device name for the flash driver.
+
+config SOC_FLASH_NRF5_RADIO_SYNC
+	bool "Nordic nRF5x flash driver synchronized with radio"
+	depends on SOC_FLASH_NRF5 && BT_CTLR
+	default y
+	help
+	  Enable synchronization between flash memory driver and radio.
 
 config SOC_FLASH_MCUX
 	bool "MCUX flash shim driver"

@@ -14,7 +14,7 @@
 #include <board.h>
 #include <init.h>
 #include <uart.h>
-#include <sections.h>
+#include <linker/sections.h>
 #include <gpio.h>
 
 #ifdef CONFIG_SOC_NRF52840
@@ -95,8 +95,8 @@ struct uart_nrf5_dev_data_t {
 	((volatile struct _uart *)(DEV_CFG(dev))->base)
 
 #define UART_IRQ_MASK_RX	(1 << 2)
-#define UART_IRQ_MASK_TX	(1 << 3)
-#define UART_IRQ_MASK_ERROR	(1 << 4)
+#define UART_IRQ_MASK_TX	(1 << 7)
+#define UART_IRQ_MASK_ERROR	(1 << 9)
 
 static const struct uart_driver_api uart_nrf5_driver_api;
 
@@ -121,6 +121,12 @@ static int baudrate_set(struct device *dev,
 
 	/* Use the common nRF5 macros */
 	switch (baudrate) {
+	case 300:
+		divisor = NRF5_UART_BAUDRATE_300;
+		break;
+	case 600:
+		divisor = NRF5_UART_BAUDRATE_600;
+		break;
 	case 1200:
 		divisor = NRF5_UART_BAUDRATE_1200;
 		break;

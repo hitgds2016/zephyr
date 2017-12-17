@@ -105,9 +105,9 @@ static int do_ccm_encrypt_mac(struct cipher_ctx *ctx,
 		return -EIO;
 	}
 
-	if (tc_ccm_generation_encryption(op->out_buf, aead_op->ad,
-					 aead_op->ad_len, op->in_buf,
-					  op->in_len, &ccm) == TC_CRYPTO_FAIL) {
+	if (tc_ccm_generation_encryption(op->out_buf, op->out_buf_max,
+					 aead_op->ad, aead_op->ad_len, op->in_buf,
+					 op->in_len, &ccm) == TC_CRYPTO_FAIL) {
 		SYS_LOG_ERR("TC internal error during CCM Encryption OP");
 		return -EIO;
 	}
@@ -146,10 +146,11 @@ static int do_ccm_decrypt_auth(struct cipher_ctx *ctx,
 		return -EIO;
 	}
 
-	if (tc_ccm_decryption_verification(op->out_buf, aead_op->ad,
-					   aead_op->ad_len, op->in_buf,
+	if (tc_ccm_decryption_verification(op->out_buf, op->out_buf_max,
+					   aead_op->ad, aead_op->ad_len,
+					   op->in_buf,
 					   op->in_len + ccm_param->tag_len,
-					    &ccm) == TC_CRYPTO_FAIL) {
+					   &ccm) == TC_CRYPTO_FAIL) {
 		SYS_LOG_ERR("TC internal error during CCM decryption OP");
 		return -EIO;
 	}
@@ -171,7 +172,7 @@ static int get_unused_session(void)
 	return i;
 }
 
-int tc_session_setup(struct device *dev, struct cipher_ctx *ctx,
+static int tc_session_setup(struct device *dev, struct cipher_ctx *ctx,
 		     enum cipher_algo algo, enum cipher_mode mode,
 		     enum cipher_op op_type)
 {
@@ -267,13 +268,13 @@ int tc_session_setup(struct device *dev, struct cipher_ctx *ctx,
 	return 0;
 }
 
-int tc_query_caps(struct device *dev)
+static int tc_query_caps(struct device *dev)
 {
 	return (CAP_RAW_KEY | CAP_SEPARATE_IO_BUFS | CAP_SYNC_OPS);
 }
 
 
-int tc_session_free(struct device *dev, struct cipher_ctx *sessn)
+static int tc_session_free(struct device *dev, struct cipher_ctx *sessn)
 {
 	struct tc_shim_drv_state *data =  sessn->drv_sessn_state;
 

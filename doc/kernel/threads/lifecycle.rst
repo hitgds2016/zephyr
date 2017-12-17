@@ -20,7 +20,8 @@ A thread has the following key properties:
 
 * A **stack area**, which is a region of memory used for the thread's stack.
   The **size** of the stack area can be tailored to conform to the actual needs
-  of the thread's processing.
+  of the thread's processing. Special macros exist to create and work with
+  stack memory regions.
 
 * A **thread control block** for private kernel bookkeeping of the thread's
   metadata. This is an instance of type :c:type:`struct k_thread`.
@@ -37,6 +38,12 @@ A thread has the following key properties:
 
 * A **start delay**, which specifies how long the kernel should wait before
   starting the thread.
+
+* An **execution mode**, which can either be supervisor or user mode.
+  By default, threads run in supervisor mode and allow access to
+  privileged CPU instructions, the entire memory address space, and
+  peripherals. User mode threads have a reduced set of privileges.
+  This depends on the :option:`CONFIG_USERSPACE` option. See :ref:`usermode`.
 
 .. _spawning_thread:
 
@@ -141,6 +148,16 @@ The following thread options are supported.
     By default, the kernel does not attempt to save and restore the contents
     of these registers when scheduling the thread.
 
+:c:macro:`K_USER`
+    If :option:`CONFIG_USERSPACE` is enabled, this thread will be created in
+    user mode and will have reduced privileges. See :ref:`usermode`. Otherwise
+    this flag does nothing.
+
+:c:macro:`K_INHERIT_PERMS`
+    If :option:`CONFIG_USERSPACE` is enabled, this thread will inherit all
+    kernel object permissions that the parent thread had, except the parent
+    thread object.  See :ref:`usermode`.
+
 Implementation
 **************
 
@@ -149,7 +166,8 @@ Spawning a Thread
 
 A thread is spawned by defining its stack area and its thread control block,
 and then calling :cpp:func:`k_thread_create()`. The stack area must be defined
-using the :c:macro:`__stack` attribute to ensure it is properly aligned.
+using :c:macro:`K_THREAD_STACK_DEFINE` to ensure it is properly set up in
+memory.
 
 The thread spawning function returns its thread id, which can be used
 to reference the thread.
@@ -163,11 +181,12 @@ The following code spawns a thread that starts immediately.
 
     extern void my_entry_point(void *, void *, void *);
 
-    char __noinit __stack my_stack_area[MY_STACK_SIZE];
+    K_THREAD_STACK_DEFINE(my_stack_area, MY_STACK_SIZE);
     struct k_thread my_thread_data;
 
     k_tid_t my_tid = k_thread_create(&my_thread_data, my_stack_area,
-                                     MY_STACK_SIZE, my_entry_point,
+                                     K_THREAD_STACK_SIZEOF(my_stack_area),
+                                     my_entry_point,
                                      NULL, NULL, NULL,
                                      MY_PRIORITY, 0, K_NO_WAIT);
 
@@ -187,6 +206,41 @@ The following code has the same effect as the code segment above.
     K_THREAD_DEFINE(my_tid, MY_STACK_SIZE,
                     my_entry_point, NULL, NULL, NULL,
                     MY_PRIORITY, 0, K_NO_WAIT);
+
+User Mode Constraints
+---------------------
+
+This section only applies if :option:`CONFIG_USERSPACE` is enabled, and a user
+thread tries to create a new thread. The :c:func:`k_thread_create()` API is
+still used, but there are additional constraints which must be met or the
+calling thread will be terminated:
+
+* The calling thread must have permissions granted on both the child thread
+  and stack parameters; both are tracked by the kernel as kernel objects.
+
+* The child thread and stack objects must be in an uninitialized state,
+  i.e. it is not currently running and the stack memory is unused.
+
+* The stack size parameter passed in must be equal to or less than the
+  bounds of the stack object when it was declared.
+
+* The :c:macro:`K_USER` option must be used, as user threads can only create
+  other user threads.
+
+* The :c:macro:`K_ESSENTIAL` option must not be used, user threads may not be
+  considered essential threads.
+
+* The priority of the child thread must be a valid priority value, and equal to
+  or lower than the parent thread.
+
+Dropping Permissions
+====================
+
+If :option:`CONFIG_USERSPACE` is enabled, a thread running in supervisor mode
+may perform a one-way transition to user mode using the
+:cpp:func:`k_thread_user_mode_enter()` API. This is a one-way operation which
+will reset and zero the thread's stack memory. The thread will be marked
+as non-essential.
 
 Terminating a Thread
 ====================
@@ -210,6 +264,8 @@ The following code illustrates the ways a thread can terminate.
         /* thread terminates at end of entry point function */
     }
 
+If CONFIG_USERSPACE is enabled, aborting a thread will additionally mark the
+thread and stack objects as uninitialized so that they may be re-used.
 
 Suggested Uses
 **************
@@ -224,7 +280,7 @@ Configuration Options
 
 Related configuration options:
 
-* None.
+* :option:`CONFIG_USERSPACE`
 
 APIs
 ****
@@ -237,3 +293,8 @@ The following thread APIs are provided by :file:`kernel.h`:
 * :cpp:func:`k_thread_abort()`
 * :cpp:func:`k_thread_suspend()`
 * :cpp:func:`k_thread_resume()`
+* :c:macro:`K_THREAD_STACK_DEFINE`
+* :c:macro:`K_THREAD_STACK_ARRAY_DEFINE`
+* :c:macro:`K_THREAD_STACK_MEMBER`
+* :c:macro:`K_THREAD_STACK_SIZEOF`
+* :c:macro:`K_THREAD_STACK_BUFFER`

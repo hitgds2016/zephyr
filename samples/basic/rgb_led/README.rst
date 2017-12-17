@@ -24,7 +24,7 @@ Arduino 101
 ===========
 
 You will need to connect the LED pins to PWM0, PWM1 and PWM2
-on arduino 101 via the shield. Depending on what kind of RGB
+on Arduino 101 via the shield. Depending on what kind of RGB
 LED you are using, please connect the common cathode to the
 ground or the common anode to Vcc. You need current limiting
 resistor for each of the single color LEDs.
@@ -32,14 +32,19 @@ resistor for each of the single color LEDs.
 The sample app requires three PWM ports. So, it can not work
 on Quark D2000 platform.
 
+Hexiwear K64
+============
+No special board setup is necessary because there is an on-board RGB LED
+connected to the K64 PWM.
+
 Building and Running
 ********************
 
 This samples does not output anything to the console.  It can be built and
 flashed to a board as follows:
 
-.. code-block:: console
-
-   $ cd samples/basic/rgb_led
-   $ make BOARD=arduino_101
-   $ make BOARD=arduino_101 flash
+.. zephyr-app-commands::
+   :zephyr-app: samples/basic/rgb_led
+   :board: arduino_101
+   :goals: build flash
+   :compact:

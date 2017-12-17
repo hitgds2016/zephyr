@@ -24,6 +24,7 @@ if CLOCK_CONTROL
 config SYS_LOG_CLOCK_CONTROL_LEVEL
 	int
 	prompt "Hardware clock controller drivers log level"
+	depends on SYS_LOG
 	default 0
 	help
 	  Sets log level for clock controller drivers
@@ -46,10 +47,10 @@ source "drivers/clock_control/Kconfig.quark_se"
 
 source "drivers/clock_control/Kconfig.stm32"
 
-source "drivers/clock_control/Kconfig.stm32f10x"
-
-source "drivers/clock_control/Kconfig.stm32f107xx"
-
 source "drivers/clock_control/Kconfig.beetle"
+
+source "drivers/clock_control/Kconfig.mcux_ccm"
+
+source "drivers/clock_control/Kconfig.mcux_sim"
 
 endif # CLOCK_CONTROL

@@ -23,7 +23,7 @@
 
 #include <misc/byteorder.h>
 #include <string.h>
-#include <rand32.h>
+#include <random/rand32.h>
 
 #include <gpio.h>
 
@@ -49,9 +49,6 @@
 #define _MACACKWAITDURATION		(864 / 16) /* 864us * 62500Hz */
 #endif
 
-/* AUTOACK should be enabled by default, disable it only for testing */
-#define MCR20A_AUTOACK_ENABLED		(true)
-
 #define MCR20A_FCS_LENGTH		(2)
 #define MCR20A_PSDU_LENGTH		(125)
 #define MCR20A_GET_SEQ_STATE_RETRIES	(3)
@@ -61,31 +58,37 @@
 #define MCR20A_CLK_OUT_CONFIG	(MCR20A_CLK_OUT_HIZ)
 
 #elif CONFIG_MCR20A_CLK_OUT_32MHZ
-#define MCR20A_CLK_OUT_CONFIG	(MCR20A_CLK_OUT_DIV(0) | MCR20A_CLK_OUT_DS |\
+#define MCR20A_CLK_OUT_CONFIG	(set_bits_clk_out_div(0) | MCR20A_CLK_OUT_DS |\
 				 MCR20A_CLK_OUT_EN)
 
 #elif CONFIG_MCR20A_CLK_OUT_16MHZ
-#define MCR20A_CLK_OUT_CONFIG	(MCR20A_CLK_OUT_DIV(1) | MCR20A_CLK_OUT_DS |\
+#define MCR20A_CLK_OUT_CONFIG	(set_bits_clk_out_div(1) | MCR20A_CLK_OUT_DS |\
 				 MCR20A_CLK_OUT_EN)
 
 #elif CONFIG_MCR20A_CLK_OUT_8MHZ
-#define MCR20A_CLK_OUT_CONFIG	(MCR20A_CLK_OUT_DIV(2) | MCR20A_CLK_OUT_EN)
+#define MCR20A_CLK_OUT_CONFIG	(set_bits_clk_out_div(2) | MCR20A_CLK_OUT_EN)
 
 #elif CONFIG_MCR20A_CLK_OUT_4MHZ
-#define MCR20A_CLK_OUT_CONFIG	(MCR20A_CLK_OUT_DIV(3) | MCR20A_CLK_OUT_EN)
+#define MCR20A_CLK_OUT_CONFIG	(set_bits_clk_out_div(3) | MCR20A_CLK_OUT_EN)
 
 #elif CONFIG_MCR20A_CLK_OUT_1MHZ
-#define MCR20A_CLK_OUT_CONFIG	(MCR20A_CLK_OUT_DIV(4) | MCR20A_CLK_OUT_EN)
+#define MCR20A_CLK_OUT_CONFIG	(set_bits_clk_out_div(4) | MCR20A_CLK_OUT_EN)
 
 #elif CONFIG_MCR20A_CLK_OUT_250KHZ
-#define MCR20A_CLK_OUT_CONFIG	(MCR20A_CLK_OUT_DIV(5) | MCR20A_CLK_OUT_EN)
+#define MCR20A_CLK_OUT_CONFIG	(set_bits_clk_out_div(5) | MCR20A_CLK_OUT_EN)
 
 #elif CONFIG_MCR20A_CLK_OUT_62500HZ
-#define MCR20A_CLK_OUT_CONFIG	(MCR20A_CLK_OUT_DIV(6) | MCR20A_CLK_OUT_EN)
+#define MCR20A_CLK_OUT_CONFIG	(set_bits_clk_out_div(6) | MCR20A_CLK_OUT_EN)
 
 #elif CONFIG_MCR20A_CLK_OUT_32768HZ
-#define MCR20A_CLK_OUT_CONFIG	(MCR20A_CLK_OUT_DIV(7) | MCR20A_CLK_OUT_EN)
+#define MCR20A_CLK_OUT_CONFIG	(set_bits_clk_out_div(7) | MCR20A_CLK_OUT_EN)
 
+#endif
+
+#ifdef CONFIG_MCR20A_IS_PART_OF_KW2XD_SIP
+#define PART_OF_KW2XD_SIP	1
+#else
+#define PART_OF_KW2XD_SIP	0
 #endif
 
 /* Values for the power mode (PM) configuration */
@@ -163,6 +166,7 @@ u8_t _mcr20a_read_reg(struct mcr20a_spi *spi, bool dreg, u8_t addr)
 		return spi->cmd_buf[len - 1];
 	}
 
+	SYS_LOG_ERR("Failed");
 	k_sem_give(&spi->spi_sem);
 
 	return 0;
@@ -196,11 +200,12 @@ bool _mcr20a_write_burst(struct mcr20a_spi *spi, bool dreg, u16_t addr,
 {
 	bool retval;
 
-	k_sem_take(&spi->spi_sem, K_FOREVER);
-
 	if ((len + 2) > sizeof(spi->cmd_buf)) {
-		SYS_LOG_ERR("Buffer length too large");
+		SYS_LOG_ERR("cmd buffer too small");
+		return false;
 	}
+
+	k_sem_take(&spi->spi_sem, K_FOREVER);
 
 	if (dreg) {
 		spi->cmd_buf[0] = MCR20A_REG_WRITE | addr;
@@ -225,11 +230,12 @@ bool _mcr20a_write_burst(struct mcr20a_spi *spi, bool dreg, u16_t addr,
 bool _mcr20a_read_burst(struct mcr20a_spi *spi, bool dreg, u16_t addr,
 			u8_t *data_buf, u8_t len)
 {
-	k_sem_take(&spi->spi_sem, K_FOREVER);
-
 	if ((len + 2) > sizeof(spi->cmd_buf)) {
-		SYS_LOG_ERR("Buffer length too large");
+		SYS_LOG_ERR("cmd buffer too small");
+		return false;
 	}
+
+	k_sem_take(&spi->spi_sem, K_FOREVER);
 
 	if (dreg) {
 		spi->cmd_buf[0] = MCR20A_REG_READ | addr;
@@ -245,7 +251,7 @@ bool _mcr20a_read_burst(struct mcr20a_spi *spi, bool dreg, u16_t addr,
 	if (spi_transceive(spi->dev, spi->cmd_buf, len,
 			   spi->cmd_buf, len) != 0) {
 		k_sem_give(&spi->spi_sem);
-		return 0;
+		return false;
 	}
 
 	if (dreg) {
@@ -256,7 +262,7 @@ bool _mcr20a_read_burst(struct mcr20a_spi *spi, bool dreg, u16_t addr,
 
 	k_sem_give(&spi->spi_sem);
 
-	return 1;
+	return true;
 }
 
 /* Mask (msk is true) or unmask all interrupts from asserting IRQ_B */
@@ -551,13 +557,6 @@ static inline void mcr20a_rx(struct mcr20a_context *mcr20a, u8_t len)
 		goto out;
 	}
 
-#if defined(CONFIG_IEEE802154_MCR20A_RAW)
-	/* TODO: Test raw mode */
-	/**
-	 * Reserve 1 byte for length
-	 */
-	net_pkt_set_ll_reserve(pkt, 1);
-#endif
 	frag = net_pkt_get_frag(pkt, K_NO_WAIT);
 	if (!frag) {
 		SYS_LOG_ERR("No frag available");
@@ -576,14 +575,13 @@ static inline void mcr20a_rx(struct mcr20a_context *mcr20a, u8_t len)
 		goto out;
 	}
 
-	mcr20a->lqi = read_reg_lqi_value(&mcr20a->spi);
-	SYS_LOG_DBG("Caught a packet (%u) (LQI: %u, RSSI: %u)",
-		    pkt_len, mcr20a->lqi,
-		    mcr20a_get_rssi(mcr20a->lqi));
+	net_pkt_set_ieee802154_lqi(pkt, read_reg_lqi_value(&mcr20a->spi));
+	net_pkt_set_ieee802154_rssi(pkt, mcr20a_get_rssi(
+					    net_pkt_ieee802154_lqi(pkt)));
 
-#if defined(CONFIG_IEEE802154_MCR20A_RAW)
-	net_buf_add_u8(frag, mcr20a->lqi);
-#endif
+	SYS_LOG_DBG("Caught a packet (%u) (LQI: %u, RSSI: %u)",
+		    pkt_len, net_pkt_ieee802154_lqi(pkt),
+		    net_pkt_ieee802154_rssi(pkt));
 
 	if (net_recv_data(mcr20a->iface, pkt) < 0) {
 		SYS_LOG_DBG("Packet dropped by NET stack");
@@ -591,8 +589,8 @@ static inline void mcr20a_rx(struct mcr20a_context *mcr20a, u8_t len)
 	}
 
 	net_analyze_stack("MCR20A Rx Fiber stack",
-			  mcr20a->mcr20a_rx_stack,
-			  CONFIG_IEEE802154_MCR20A_RX_STACK_SIZE);
+			  K_THREAD_STACK_BUFFER(mcr20a->mcr20a_rx_stack),
+			  K_THREAD_STACK_SIZEOF(mcr20a->mcr20a_rx_stack));
 	return;
 out:
 	if (pkt) {
@@ -849,10 +847,19 @@ static int mcr20a_set_cca_mode(struct device *dev, u8_t mode)
 	return 0;
 }
 
+static enum ieee802154_hw_caps mcr20a_get_capabilities(struct device *dev)
+{
+	return IEEE802154_HW_FCS |
+		IEEE802154_HW_2_4_GHZ |
+		IEEE802154_HW_TX_RX_ACK |
+		IEEE802154_HW_FILTER;
+}
+
 /* Note: CCA before TX is enabled by default */
 static int mcr20a_cca(struct device *dev)
 {
 	struct mcr20a_context *mcr20a = dev->driver_data;
+	int retval;
 
 	k_mutex_lock(&mcr20a->phy_mutex, K_FOREVER);
 
@@ -881,7 +888,12 @@ static int mcr20a_cca(struct device *dev)
 	}
 
 	k_mutex_unlock(&mcr20a->phy_mutex);
-	k_sem_take(&mcr20a->seq_sync, MCR20A_SEQ_SYNC_TIMEOUT);
+	retval = k_sem_take(&mcr20a->seq_sync, MCR20A_SEQ_SYNC_TIMEOUT);
+	if (retval) {
+		SYS_LOG_ERR("Timeout occurred, %d", retval);
+		return retval;
+	}
+
 	SYS_LOG_DBG("done");
 
 	return mcr20a->seq_retval;
@@ -912,7 +924,7 @@ static int mcr20a_set_channel(struct device *dev, u16_t channel)
 
 	ctrl1 = read_reg_phy_ctrl1(&mcr20a->spi);
 
-	if (mcr20a_abort_sequence(mcr20a, false)) {
+	if (mcr20a_abort_sequence(mcr20a, true)) {
 		SYS_LOG_ERR("Failed to reset XCV sequence");
 		goto out;
 	}
@@ -954,7 +966,8 @@ static int mcr20a_set_pan_id(struct device *dev, u16_t pan_id)
 	k_mutex_lock(&mcr20a->phy_mutex, K_FOREVER);
 
 	if (!write_burst_pan_id(&mcr20a->spi, (u8_t *) &pan_id)) {
-		SYS_LOG_ERR("FAILED");
+		SYS_LOG_ERR("Failed");
+		k_mutex_unlock(&mcr20a->phy_mutex);
 		return -EIO;
 	}
 
@@ -972,7 +985,8 @@ static int mcr20a_set_short_addr(struct device *dev, u16_t short_addr)
 	k_mutex_lock(&mcr20a->phy_mutex, K_FOREVER);
 
 	if (!write_burst_short_addr(&mcr20a->spi, (u8_t *) &short_addr)) {
-		SYS_LOG_ERR("FAILED");
+		SYS_LOG_ERR("Failed");
+		k_mutex_unlock(&mcr20a->phy_mutex);
 		return -EIO;
 	}
 
@@ -990,6 +1004,7 @@ static int mcr20a_set_ieee_addr(struct device *dev, const u8_t *ieee_addr)
 
 	if (!write_burst_ext_addr(&mcr20a->spi, (void *)ieee_addr)) {
 		SYS_LOG_ERR("Failed");
+		k_mutex_unlock(&mcr20a->phy_mutex);
 		return -EIO;
 	}
 
@@ -999,6 +1014,23 @@ static int mcr20a_set_ieee_addr(struct device *dev, const u8_t *ieee_addr)
 		    ieee_addr[3], ieee_addr[2], ieee_addr[1], ieee_addr[0]);
 
 	return 0;
+}
+
+static int mcr20a_set_filter(struct device *dev,
+			     enum ieee802154_filter_type type,
+			     const struct ieee802154_filter *filter)
+{
+	SYS_LOG_DBG("Applying filter %u", type);
+
+	if (type == IEEE802154_FILTER_TYPE_IEEE_ADDR) {
+		return mcr20a_set_ieee_addr(dev, filter->ieee_addr);
+	} else if (type == IEEE802154_FILTER_TYPE_SHORT_ADDR) {
+		return mcr20a_set_short_addr(dev, filter->short_addr);
+	} else if (type == IEEE802154_FILTER_TYPE_PAN_ID) {
+		return mcr20a_set_pan_id(dev, filter->pan_id);
+	}
+
+	return -EINVAL;
 }
 
 static int mcr20a_set_txpower(struct device *dev, s16_t dbm)
@@ -1069,8 +1101,9 @@ static int mcr20a_tx(struct device *dev,
 		     struct net_buf *frag)
 {
 	struct mcr20a_context *mcr20a = dev->driver_data;
-	u8_t seq = MCR20A_AUTOACK_ENABLED ? MCR20A_XCVSEQ_TX_RX :
-					       MCR20A_XCVSEQ_TX;
+	u8_t seq = ieee802154_is_ar_flag_set(pkt) ? MCR20A_XCVSEQ_TX_RX :
+						    MCR20A_XCVSEQ_TX;
+	int retval;
 
 	k_mutex_lock(&mcr20a->phy_mutex, K_FOREVER);
 
@@ -1105,7 +1138,12 @@ static int mcr20a_tx(struct device *dev,
 	}
 
 	k_mutex_unlock(&mcr20a->phy_mutex);
-	k_sem_take(&mcr20a->seq_sync, MCR20A_SEQ_SYNC_TIMEOUT);
+	retval = k_sem_take(&mcr20a->seq_sync, MCR20A_SEQ_SYNC_TIMEOUT);
+	if (retval) {
+		SYS_LOG_ERR("Timeout occurred, %d", retval);
+		return retval;
+	}
+
 	SYS_LOG_DBG("done");
 
 	return mcr20a->seq_retval;
@@ -1176,6 +1214,7 @@ error:
 static int mcr20a_stop(struct device *dev)
 {
 	struct mcr20a_context *mcr20a = dev->driver_data;
+	u8_t power_mode;
 
 	k_mutex_lock(&mcr20a->phy_mutex, K_FOREVER);
 
@@ -1191,7 +1230,13 @@ static int mcr20a_stop(struct device *dev)
 
 	enable_irqb_interrupt(mcr20a, false);
 
-	if (!write_reg_pwr_modes(&mcr20a->spi, MCR20A_PM_HIBERNATE)) {
+	if (PART_OF_KW2XD_SIP) {
+		power_mode = MCR20A_PM_DOZE;
+	} else {
+		power_mode = MCR20A_PM_HIBERNATE;
+	}
+
+	if (!write_reg_pwr_modes(&mcr20a->spi, power_mode)) {
 		goto error;
 	}
 
@@ -1204,14 +1249,6 @@ error:
 	k_mutex_unlock(&mcr20a->phy_mutex);
 	SYS_LOG_ERR("Error stopping MCR20A");
 	return -EIO;
-}
-
-static u8_t mcr20a_get_lqi(struct device *dev)
-{
-	struct mcr20a_context *mcr20a = dev->driver_data;
-
-	SYS_LOG_DBG("");
-	return mcr20a->lqi;
 }
 
 static int mcr20a_update_overwrites(struct mcr20a_context *dev)
@@ -1256,20 +1293,23 @@ static int power_on_and_setup(struct device *dev)
 	u32_t status;
 	u8_t tmp = 0;
 
-	set_reset(dev, 0);
-	_usleep(150);
-	set_reset(dev, 1);
+	if (!PART_OF_KW2XD_SIP) {
+		set_reset(dev, 0);
+		_usleep(150);
+		set_reset(dev, 1);
 
-	do {
-		_usleep(50);
-		timeout--;
-		gpio_pin_read(mcr20a->irq_gpio,
-			      CONFIG_MCR20A_GPIO_IRQ_B_PIN, &status);
-	} while (status && timeout);
+		do {
+			_usleep(50);
+			timeout--;
+			gpio_pin_read(mcr20a->irq_gpio,
+				      CONFIG_MCR20A_GPIO_IRQ_B_PIN, &status);
+		} while (status && timeout);
 
-	if (status) {
-		SYS_LOG_ERR("Timeout, failed to get WAKE IRQ");
-		return -EIO;
+		if (status) {
+			SYS_LOG_ERR("Timeout, failed to get WAKE IRQ");
+			return -EIO;
+		}
+
 	}
 
 	tmp = MCR20A_CLK_OUT_CONFIG | MCR20A_CLK_OUT_EXTEND;
@@ -1295,11 +1335,9 @@ static int power_on_and_setup(struct device *dev)
 	write_reg_rx_wtr_mark(&mcr20a->spi, 8);
 
 	/* Configure PHY behaviour */
-	tmp = MCR20A_PHY_CTRL1_CCABFRTX;
-	if (MCR20A_AUTOACK_ENABLED) {
-		tmp |= MCR20A_PHY_CTRL1_AUTOACK |
-		       MCR20A_PHY_CTRL1_RXACKRQD;
-	}
+	tmp = MCR20A_PHY_CTRL1_CCABFRTX |
+	      MCR20A_PHY_CTRL1_AUTOACK |
+	      MCR20A_PHY_CTRL1_RXACKRQD;
 	write_reg_phy_ctrl1(&mcr20a->spi, tmp);
 
 	/* Enable Sequence-end interrupt */
@@ -1340,7 +1378,7 @@ static inline int configure_gpios(struct device *dev)
 
 	gpio_pin_configure(mcr20a->reset_gpio, CONFIG_MCR20A_GPIO_RESET_PIN,
 			   GPIO_DIR_OUT);
-	set_reset(dev, 0);
+	set_reset(dev, 1);
 
 	return 0;
 }
@@ -1380,8 +1418,7 @@ static int mcr20a_init(struct device *dev)
 {
 	struct mcr20a_context *mcr20a = dev->driver_data;
 
-	k_sem_init(&mcr20a->spi.spi_sem, 0, UINT_MAX);
-	k_sem_give(&mcr20a->spi.spi_sem);
+	k_sem_init(&mcr20a->spi.spi_sem, 1, UINT_MAX);
 
 	k_mutex_init(&mcr20a->phy_mutex);
 	k_sem_init(&mcr20a->isr_sem, 0, 1);
@@ -1434,19 +1471,17 @@ static struct ieee802154_radio_api mcr20a_radio_api = {
 	.iface_api.init	= mcr20a_iface_init,
 	.iface_api.send	= ieee802154_radio_send,
 
-	.cca		= mcr20a_cca,
-	.set_channel	= mcr20a_set_channel,
-	.set_pan_id	= mcr20a_set_pan_id,
-	.set_short_addr	= mcr20a_set_short_addr,
-	.set_ieee_addr	= mcr20a_set_ieee_addr,
-	.set_txpower	= mcr20a_set_txpower,
-	.start		= mcr20a_start,
-	.stop		= mcr20a_stop,
-	.tx		= mcr20a_tx,
-	.get_lqi	= mcr20a_get_lqi,
+	.get_capabilities	= mcr20a_get_capabilities,
+	.cca			= mcr20a_cca,
+	.set_channel		= mcr20a_set_channel,
+	.set_filter		= mcr20a_set_filter,
+	.set_txpower		= mcr20a_set_txpower,
+	.start			= mcr20a_start,
+	.stop			= mcr20a_stop,
+	.tx			= mcr20a_tx,
 };
 
-#if defined(CONFIG_IEEE802154_MCR20A_RAW)
+#if defined(CONFIG_IEEE802154_RAW_MODE)
 DEVICE_AND_API_INIT(mcr20a, CONFIG_IEEE802154_MCR20A_DRV_NAME,
 		    mcr20a_init, &mcr20a_context_data, NULL,
 		    POST_KERNEL, CONFIG_IEEE802154_MCR20A_INIT_PRIO,

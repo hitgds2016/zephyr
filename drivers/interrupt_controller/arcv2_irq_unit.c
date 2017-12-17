@@ -28,8 +28,12 @@ extern void *_VectorTable;
 #include <kernel_structs.h>
 #include <v2/irq.h>
 
+#ifdef CONFIG_ARC_HAS_SECURE
+#undef _ARC_V2_IRQ_VECT_BASE
+#define _ARC_V2_IRQ_VECT_BASE _ARC_V2_IRQ_VECT_BASE_S
+#endif
+
 static u32_t _arc_v2_irq_unit_device_power_state = DEVICE_PM_ACTIVE_STATE;
-u32_t _saved_firq_stack;
 struct arc_v2_irq_unit_ctx {
 	u32_t irq_ctrl; /* Interrupt Context Saving Control Register. */
 	u32_t irq_vect_base; /* Interrupt Vector Base. */
@@ -69,8 +73,14 @@ static int _arc_v2_irq_unit_init(struct device *unused)
 	 */
 	for (irq = 16; irq < CONFIG_NUM_IRQS; irq++) {
 		_arc_v2_aux_reg_write(_ARC_V2_IRQ_SELECT, irq);
+#ifdef CONFIG_ARC_HAS_SECURE
+		_arc_v2_aux_reg_write(_ARC_V2_IRQ_PRIORITY,
+			 (CONFIG_NUM_IRQ_PRIO_LEVELS-1) |
+			 _ARC_V2_IRQ_PRIORITY_SECURE); /* lowest priority */
+#else
 		_arc_v2_aux_reg_write(_ARC_V2_IRQ_PRIORITY,
 			 (CONFIG_NUM_IRQ_PRIO_LEVELS-1)); /* lowest priority */
+#endif
 		_arc_v2_aux_reg_write(_ARC_V2_IRQ_ENABLE, _ARC_V2_INT_DISABLE);
 		_arc_v2_aux_reg_write(_ARC_V2_IRQ_TRIGGER, _ARC_V2_INT_LEVEL);
 	}
@@ -97,8 +107,6 @@ unsigned int _arc_v2_irq_unit_trigger_get(int irq)
 }
 
 #ifdef CONFIG_DEVICE_POWER_MANAGEMENT
-extern void _firq_stack_suspend(void);
-extern void _firq_stack_resume(void);
 
 static int _arc_v2_irq_unit_suspend(struct device *dev)
 {
@@ -123,8 +131,6 @@ static int _arc_v2_irq_unit_suspend(struct device *dev)
 	ctx.irq_ctrl = _arc_v2_aux_reg_read(_ARC_V2_AUX_IRQ_CTRL);
 	ctx.irq_vect_base = _arc_v2_aux_reg_read(_ARC_V2_IRQ_VECT_BASE);
 
-	_firq_stack_suspend();
-
 	_arc_v2_irq_unit_device_power_state = DEVICE_PM_SUSPEND_STATE;
 
 	return 0;
@@ -137,16 +143,20 @@ static int _arc_v2_irq_unit_resume(struct device *dev)
 
 	ARG_UNUSED(dev);
 
-	_firq_stack_resume();
-
 	/* Interrupts from 0 to 15 are exceptions and they are ignored
 	 * by IRQ auxiliary registers. For that reason we skip those
 	 * values in this loop.
 	 */
 	for (irq = 16; irq < CONFIG_NUM_IRQS; irq++) {
 		_arc_v2_aux_reg_write(_ARC_V2_IRQ_SELECT, irq);
+#ifdef CONFIG_ARC_HAS_SECURE
+		_arc_v2_aux_reg_write(_ARC_V2_IRQ_PRIORITY,
+				ctx.irq_config[irq - 16] >> 2 |
+				_ARC_V2_IRQ_PRIORITY_SECURE);
+#else
 		_arc_v2_aux_reg_write(_ARC_V2_IRQ_PRIORITY,
 				ctx.irq_config[irq - 16] >> 2);
+#endif
 		_arc_v2_aux_reg_write(_ARC_V2_IRQ_TRIGGER,
 				(ctx.irq_config[irq - 16] >> 1) & BIT(0));
 		_arc_v2_aux_reg_write(_ARC_V2_IRQ_ENABLE,

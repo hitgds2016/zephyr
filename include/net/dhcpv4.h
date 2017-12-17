@@ -11,9 +11,14 @@
 #ifndef __DHCPV4_H
 #define __DHCPV4_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief DHCPv4
  * @defgroup dhcpv4 DHCPv4
+ * @ingroup networking
  * @{
  */
 
@@ -67,5 +72,9 @@ const char *net_dhcpv4_state_name(enum net_dhcpv4_state state);
 /**
  * @}
  */
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __DHCPV4_H */

@@ -21,7 +21,7 @@
 #include <errno.h>
 
 #if !defined(CONFIG_MBEDTLS_CFG_FILE)
-#include "mbedtls/config.h"
+#include <mbedtls/config.h>
 #else
 #include CONFIG_MBEDTLS_CFG_FILE
 #endif
@@ -315,7 +315,7 @@ exit:
 }
 
 #define STACK_SIZE		8192
-u8_t stack[STACK_SIZE];
+K_THREAD_STACK_DEFINE(stack, STACK_SIZE);
 static struct k_thread tls_thread;
 
 void main(void)

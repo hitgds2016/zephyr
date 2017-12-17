@@ -14,6 +14,10 @@ as described in the :ref:`kernel`.
    :local:
    :backlinks: top
 
+.. comment
+   not documenting
+   .. doxygengroup:: kernel_apis
+
 Threads
 *******
 
@@ -24,7 +28,6 @@ that is too lengthy or too complex to be performed by an ISR.
 
 .. doxygengroup:: thread_apis
    :project: Zephyr
-   :content-only:
 
 Workqueues
 **********
@@ -36,7 +39,6 @@ or high-priority thread to offload non-urgent processing.
 
 .. doxygengroup:: workqueue_apis
    :project: Zephyr
-   :content-only:
 
 Clocks
 ******
@@ -47,7 +49,6 @@ with either normal and high precision.
 
 .. doxygengroup:: clock_apis
    :project: Zephyr
-   :content-only:
 
 Timers
 ******
@@ -58,7 +59,6 @@ an action when the timer expires.
 
 .. doxygengroup:: timer_apis
    :project: Zephyr
-   :content-only:
 
 Memory Slabs
 ************
@@ -69,7 +69,6 @@ memory blocks.
 
 .. doxygengroup:: mem_slab_apis
    :project: Zephyr
-   :content-only:
 
 Memory Pools
 ************
@@ -80,7 +79,6 @@ memory blocks.
 
 .. doxygengroup:: mem_pool_apis
    :project: Zephyr
-   :content-only:
 
 Heap Memory Pool
 ****************
@@ -91,7 +89,6 @@ in a :cpp:func:`malloc()`-like manner.
 
 .. doxygengroup:: heap_apis
    :project: Zephyr
-   :content-only:
 
 Semaphores
 **********
@@ -101,7 +98,6 @@ Semaphores provide traditional counting semaphore capabilities.
 
 .. doxygengroup:: semaphore_apis
    :project: Zephyr
-   :content-only:
 
 Mutexes
 *******
@@ -112,7 +108,6 @@ with basic priority inheritance.
 
 .. doxygengroup:: mutex_apis
    :project: Zephyr
-   :content-only:
 
 Alerts
 ******
@@ -123,7 +118,6 @@ somewhat akin to Unix-style signals.
 
 .. doxygengroup:: alert_apis
    :project: Zephyr
-   :content-only:
 
 Fifos
 *****
@@ -134,7 +128,6 @@ of any size.
 
 .. doxygengroup:: fifo_apis
    :project: Zephyr
-   :content-only:
 
 Lifos
 *****
@@ -145,7 +138,6 @@ of any size.
 
 .. doxygengroup:: lifo_apis
    :project: Zephyr
-   :content-only:
 
 Stacks
 ******
@@ -156,7 +148,12 @@ data items.
 
 .. doxygengroup:: stack_apis
    :project: Zephyr
-   :content-only:
+
+Queues
+******
+
+.. doxygengroup:: queue_apis
+   :project: Zephyr
 
 Message Queues
 **************
@@ -167,7 +164,6 @@ for fixed-size data items.
 
 .. doxygengroup:: msgq_apis
    :project: Zephyr
-   :content-only:
 
 Mailboxes
 *********
@@ -178,7 +174,6 @@ for variable-size messages.
 
 .. doxygengroup:: mailbox_apis
    :project: Zephyr
-   :content-only:
 
 Pipes
 *****
@@ -189,7 +184,12 @@ variable-size chunks of data, in whole or in part.
 
 .. doxygengroup:: pipe_apis
    :project: Zephyr
-   :content-only:
+
+Asynchronous Polling
+********************
+
+.. doxygengroup:: poll_apis
+   :project: Zephyr
 
 Interrupt Service Routines (ISRs)
 *********************************
@@ -200,7 +200,6 @@ executed asynchronously in response to a hardware or software interrupt.
 
 .. doxygengroup:: isr_apis
    :project: Zephyr
-   :content-only:
 
 Atomic Services
 ***************
@@ -214,7 +213,12 @@ The atomic services enable multiple threads and ISRs to read and modify
 
 .. doxygengroup:: atomic_apis
    :project: Zephyr
-   :content-only:
+
+Profiling
+*********
+
+.. doxygengroup:: profiling_apis
+   :project: Zephyr
 
 Floating Point Services
 ***********************
@@ -225,7 +229,6 @@ registers.
 
 .. doxygengroup:: float_apis
    :project: Zephyr
-   :content-only:
 
 Ring Buffers
 ************
@@ -238,3 +241,15 @@ of variable-size data items.
    :project: Zephyr
    :content-only:
 
+Memory Domain
+*************
+
+A memory domain contains some number of memory partitions. Threads can
+specify the range and attribute (access permission) for memory partitions
+in a memory domain. Threads in the same memory domain have the
+same access permissions to the memory partitions belong to the
+memory domain.
+(See :ref:`memory_domain`.)
+
+.. doxygengroup:: mem_domain_apis
+   :project: Zephyr

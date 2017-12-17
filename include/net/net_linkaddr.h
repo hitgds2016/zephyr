@@ -20,6 +20,13 @@
 extern "C" {
 #endif
 
+/**
+ * @brief Network link address library
+ * @defgroup net_linkaddr Network Link Address Library
+ * @ingroup networking
+ * @{
+ */
+
 #ifdef CONFIG_NET_L2_IEEE802154
 #define NET_LINK_ADDR_MAX_LENGTH 8
 #else
@@ -124,6 +131,10 @@ static inline int net_linkaddr_set(struct net_linkaddr_storage *lladdr_store,
 
 	return 0;
 }
+
+/**
+ * @}
+ */
 
 #ifdef __cplusplus
 }

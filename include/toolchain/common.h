@@ -98,12 +98,28 @@
 /* Indicate that an array will be used for stack space. */
 
 #if !defined(_ASMLANGUAGE)
-  #define __stack __aligned(STACK_ALIGN)
+  /* don't use this anymore, use K_DECLARE_STACK instead. Remove for 1.11 */
+  #define __stack __aligned(STACK_ALIGN) __DEPRECATED_MACRO
 #endif
 
 /* concatenate the values of the arguments into one */
 #define _DO_CONCAT(x, y) x ## y
 #define _CONCAT(x, y) _DO_CONCAT(x, y)
+
+/* Additionally used as a sentinel by gen_syscalls.py to identify what
+ * functions are system calls
+ *
+ * Note POSIX unit tests don't still generate the system call stubs, so
+ * until https://github.com/zephyrproject-rtos/zephyr/issues/5006 is
+ * fixed via possibly #4174, we introduce this hack -- which will
+ * disallow us to test system calls in POSIX unit testing (currently
+ * not used).
+ */
+#ifndef ZTEST_UNITTEST
+#define __syscall static inline
+#else
+#define __syscall
+#endif /* #ifndef ZTEST_UNITTEST */
 
 #ifndef BUILD_ASSERT
 /* compile-time assertion that makes the build fail */

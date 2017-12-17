@@ -41,6 +41,8 @@ hardware features:
 +-----------+------------+----------------------+
 | GPIO      | on-chip    | gpio                 |
 +-----------+------------+----------------------+
+| I2C       | on-chip    | i2c                  |
++-----------+------------+----------------------+
 
 Other hardware features are not supported by the Zephyr kernel.
 
@@ -291,6 +293,20 @@ the slow clock is 32.768 kHz. The frequency of the main clock
 is 8 MHz. The processor can setup HSE to drive the master clock,
 which can be set as high as 72 MHz.
 
+Serial Port
+===========
+
+OLIMEXINO-STM32 board has up to 3 U(S)ARTs. The Zephyr console output is
+assigned to USART1. Default settings are 115200 8N1.
+
+I2C
+===
+
+OLIMEXINO-STM32 board has up to 1 I2C. The default I2C mapping for Zephyr is:
+
+- I2C2_SCL : PB10
+- I2C2_SDA : PB11
+
 Jumpers
 =======
 
@@ -351,16 +367,15 @@ Flashing an Application to OLIMEXINO-STM32
 ==========================================
 
 To upload an application to the OLIMEXINO-STM32 board a TTL(3.3V)
-serial adapter is required. This tutorial uses sample application
-:ref:`button-sample`
+serial adapter is required. This tutorial uses the
+:ref:`button-sample` sample application.
 
 #. To build the Zephyr kernel and application, enter:
 
-   .. code-block:: console
-
-      $ cd $<zephyr_root_path>
-      $ source zephyr-env.sh
-      $ make -C samples/basic/button BOARD=olimexino_stm32
+   .. zephyr-app-commands::
+      :zephyr-app: samples/basic/button
+      :board: olimexino_stm32
+      :goals: build
 
 #. Connect the serial cable to the UEXT lines of the UART
    interface (pin #3=TX and pin #4=RX).
@@ -369,12 +384,12 @@ serial adapter is required. This tutorial uses sample application
 
 #. Reset the board while holding the button (BUT).
 
-#. Flash the application using the stm32flash tool:
+#. Flash the application using the stm32flash tool. Start
+   by navigating to the build directory containing zephyr.bin.
 
    .. code-block:: console
 
-      $ cd samples/basic/button
-      $ stm32flash -w outdir/olimexino_stm32/zephyr.bin -v -g 0x0 <tty_device>
+      $ stm32flash -w zephyr.bin -v -g 0x0 <tty_device>
 
    Replace :code:`<tty_device>` with the port where the board
    OLIMEXINO-STM32 can be found. For example, under Linux,

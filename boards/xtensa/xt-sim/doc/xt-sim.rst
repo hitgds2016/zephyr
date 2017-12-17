@@ -26,7 +26,7 @@ emulating Xtensa hardware.
 Hardware
 ********
 
-The folllowing Xtensa cores are officially supported:
+The following Xtensa cores are officially supported:
 
 - hifi3_bd5
 - XRC_FUSION_AON_ALL_LM
@@ -54,7 +54,7 @@ A Linux host system is required for Xtensa development work.
 We recommend using a __``Debian 9.x (Stretch)``__ or recent __``Ubuntu``__
 releases (with multilib support).
 
-Only `Xtensa tools` version ``RF-2016.4-linux`` or later are officially
+Only Xtensa tools version ``RF-2016.4-linux`` or later are officially
 supported. Other versions may work but are not supported by Cadence Systems Inc.
 
 In order to set up the Zephyr OS build system, a Linux 32-bit GCC compiler must
@@ -151,10 +151,9 @@ The linker script should be named ``linker.ld`` and placed in the directory
 Configuring build
 =================
 
-.. code-block:: console
-
-    $ cd tests/kernel/test_build
-    $ make menuconfig
+.. zephyr-app-commands::
+   :zephyr-app: tests/kernel/test_build
+   :goals: menuconfig
 
 Below is an example of usage for typical configuration:
 
@@ -183,11 +182,10 @@ Compiling and running
 The Xtensa executable can be run in the simulator either with a standalone core,
 or with a core connected to simulated peripherals.
 
-Use make to build and run as follows:
+Build and run as follows:
 
-.. code-block:: console
-
-    $ make run
+.. zephyr-app-commands::
+   :goals: run
 
 References
 **********

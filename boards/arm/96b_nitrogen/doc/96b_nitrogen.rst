@@ -68,7 +68,7 @@ features:
 +-----------+------------+--------------------------------------+
 | FLASH     | on-chip    | flash                                |
 +-----------+------------+--------------------------------------+
-| RADIO     | on-chip    | bluetooth                            |
+| RADIO     | on-chip    | Bluetooth                            |
 +-----------+------------+--------------------------------------+
 | RTT       | on-chip    | console                              |
 +-----------+------------+--------------------------------------+
@@ -267,34 +267,13 @@ and install a more recent version of pyOCD.
 Flashing an Application to 96Boards Nitrogen
 ============================================
 
-The sample application :ref:`hello_world` is being used in this tutorial:
+Here is an example for the :ref:`hello_world` application. This
+requires installing the :ref:`nxp_opensda_pyocd` tools.
 
-.. code-block:: console
-
-   $<zephyr_root_path>/samples/hello_world
-
-To build the Zephyr kernel and application, enter:
-
-.. code-block:: console
-
-   $ cd <zephyr_root_path>
-   $ source zephyr-env.sh
-   $ cd $ZEPHYR_BASE/samples/hello_world/
-   $ make BOARD=96b_nitrogen
-
-Connect the micro-USB cable to the 96Boards Nitrogen and to your computer.
-
-Erase the flash memory in the nRF52832:
-
-.. code-block:: console
-
-   $ pyocd-flashtool -d debug -t nrf52 -ce
-
-Flash the application using the pyocd-flashtool tool:
-
-.. code-block:: console
-
-   $ pyocd-flashtool -d debug -t nrf52 outdir/96b_nitrogen/zephyr.hex
+.. zephyr-app-commands::
+   :zephyr-app: samples/hello_world
+   :board: 96b_nitrogen
+   :goals: build flash
 
 Run your favorite terminal program to listen for output.
 
@@ -316,23 +295,14 @@ terminal:
 Debugging with GDB
 ==================
 
-To debug Zephyr with GDB launch the GDB server on a terminal:
+You can debug an application in the usual way.  Here is an example for the
+:ref:`hello_world` application. This also requires pyOCD.
 
-.. code-block:: console
-
-   $ pyocd-gdbserver
-
-and then launch GDB against the .elf file you built:
-
-.. code-block:: console
-
-   $ arm-none-eabi-gdb outdir/96b_nitrogen/zephyr.elf
-
-And finally connect GDB to the GDB Server:
-
-.. code-block:: console
-
-   (gdb) target remote localhost:3333
+.. zephyr-app-commands::
+   :zephyr-app: samples/hello_world
+   :board: 96b_nitrogen
+   :maybe-skip-config:
+   :goals: debug
 
 .. _pyOCD:
     https://github.com/mbedmicro/pyOCD

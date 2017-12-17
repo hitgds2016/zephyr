@@ -31,8 +31,18 @@
 extern "C" {
 #endif
 
+/**
+ * @brief Network packet management library
+ * @defgroup net_pkt Network Packet Library
+ * @ingroup networking
+ * @{
+ */
+
 struct net_context;
 
+/* Note that if you add new fields into net_pkt, remember to update
+ * net_pkt_clone() function.
+ */
 struct net_pkt {
 	/** FIFO uses first 4 bytes itself, reserve space */
 	int _reserved;
@@ -63,6 +73,8 @@ struct net_pkt {
 	struct net_linkaddr lladdr_src;
 	struct net_linkaddr lladdr_dst;
 
+	u16_t data_len;         /* amount of payload data that can be added */
+
 	u16_t appdatalen;
 	u8_t ll_reserve;	/* link layer header length */
 	u8_t ip_hdr_len;	/* pre-filled in order to avoid func call */
@@ -71,17 +83,30 @@ struct net_pkt {
 	sys_snode_t sent_list;
 #endif
 
-	u8_t sent       : 1;	/* Is this sent or not
+	u8_t sent_or_eof: 1;	/* For outgoing packet: is this sent or not
+				 * For incoming packet of a socket: last
+				 * packet before EOF
 				 * Used only if defined(CONFIG_NET_TCP)
+				 */
+	u8_t pkt_queued: 1;	/* For outgoing packet: is this packet queued
+				 * to be sent but has not reached the driver
+				 * yet. Used only if defined(CONFIG_NET_TCP)
 				 */
 	u8_t forwarding : 1;	/* Are we forwarding this pkt
 				 * Used only if defined(CONFIG_NET_ROUTE)
 				 */
 	u8_t family     : 4;	/* IPv4 vs IPv6 */
-	u8_t _unused    : 4;
+	u8_t _unused    : 3;
+
+	union {
+		/* IPv6 hop limit or IPv4 ttl for this network packet.
+		 * The value is shared between IPv6 and IPv4.
+		 */
+		u8_t ipv6_hop_limit;
+		u8_t ipv4_ttl;
+	};
 
 #if defined(CONFIG_NET_IPV6)
-	u8_t ipv6_hop_limit;	/* IPv6 hop limit for this network packet. */
 	u8_t ipv6_ext_len;	/* length of extension headers */
 	u8_t ipv6_ext_opt_len; /* IPv6 ND option length */
 
@@ -99,8 +124,9 @@ struct net_pkt {
 #endif /* CONFIG_NET_IPV6_FRAGMENT */
 #endif /* CONFIG_NET_IPV6 */
 
-#if defined(CONFIG_NET_L2_IEEE802154)
-	u8_t ieee802154_rssi;
+#if defined(CONFIG_NET_L2_IEEE802154) || defined(CONFIG_IEEE802154_RAW_MODE)
+	u8_t ieee802154_rssi; /* Received Signal Strength Indication */
+	u8_t ieee802154_lqi;  /* Link Quality Indicator */
 #endif
 	/* @endcond */
 
@@ -123,7 +149,7 @@ static inline struct net_context *net_pkt_context(struct net_pkt *pkt)
 }
 
 static inline void net_pkt_set_context(struct net_pkt *pkt,
-					struct net_context *ctx)
+				       struct net_context *ctx)
 {
 	pkt->context = ctx;
 }
@@ -185,15 +211,35 @@ static inline void net_pkt_set_next_hdr(struct net_pkt *pkt, u8_t *hdr)
 	pkt->next_hdr = hdr;
 }
 
-#if defined(CONFIG_NET_TCP)
 static inline u8_t net_pkt_sent(struct net_pkt *pkt)
 {
-	return pkt->sent;
+	return pkt->sent_or_eof;
 }
 
 static inline void net_pkt_set_sent(struct net_pkt *pkt, bool sent)
 {
-	pkt->sent = sent;
+	pkt->sent_or_eof = sent;
+}
+
+static inline u8_t net_pkt_queued(struct net_pkt *pkt)
+{
+	return pkt->pkt_queued;
+}
+
+static inline void net_pkt_set_queued(struct net_pkt *pkt, bool send)
+{
+	pkt->pkt_queued = send;
+}
+
+#if defined(CONFIG_NET_SOCKETS)
+static inline u8_t net_pkt_eof(struct net_pkt *pkt)
+{
+	return pkt->sent_or_eof;
+}
+
+static inline void net_pkt_set_eof(struct net_pkt *pkt, bool eof)
+{
+	pkt->sent_or_eof = eof;
 }
 #endif
 
@@ -211,6 +257,19 @@ static inline void net_pkt_set_forwarding(struct net_pkt *pkt, bool forward)
 static inline bool net_pkt_forwarding(struct net_pkt *pkt)
 {
 	return false;
+}
+#endif
+
+#if defined(CONFIG_NET_IPV4)
+static inline u8_t net_pkt_ipv4_ttl(struct net_pkt *pkt)
+{
+	return pkt->ipv4_ttl;
+}
+
+static inline void net_pkt_set_ipv4_ttl(struct net_pkt *pkt,
+					u8_t ttl)
+{
+	pkt->ipv4_ttl = ttl;
 }
 #endif
 
@@ -307,24 +366,6 @@ static inline u8_t *net_pkt_ip_data(struct net_pkt *pkt)
 	return pkt->frags->data;
 }
 
-static inline u8_t *net_pkt_udp_data(struct net_pkt *pkt)
-{
-	return &pkt->frags->data[net_pkt_ip_hdr_len(pkt) +
-				 net_pkt_ipv6_ext_len(pkt)];
-}
-
-static inline u8_t *net_pkt_tcp_data(struct net_pkt *pkt)
-{
-	return &pkt->frags->data[net_pkt_ip_hdr_len(pkt) +
-				 net_pkt_ipv6_ext_len(pkt)];
-}
-
-static inline u8_t *net_pkt_icmp_data(struct net_pkt *pkt)
-{
-	return &pkt->frags->data[net_pkt_ip_hdr_len(pkt) +
-				 net_pkt_ipv6_ext_len(pkt)];
-}
-
 static inline u8_t *net_pkt_appdata(struct net_pkt *pkt)
 {
 	return pkt->appdata;
@@ -385,24 +426,32 @@ static inline void net_pkt_ll_swap(struct net_pkt *pkt)
 	net_pkt_ll_dst(pkt)->addr = addr;
 }
 
-#if defined(CONFIG_NET_L2_IEEE802154)
+#if defined(CONFIG_NET_L2_IEEE802154) || defined(CONFIG_IEEE802154_RAW_MODE)
 static inline u8_t net_pkt_ieee802154_rssi(struct net_pkt *pkt)
 {
 	return pkt->ieee802154_rssi;
 }
 
 static inline void net_pkt_set_ieee802154_rssi(struct net_pkt *pkt,
-						u8_t rssi)
+					       u8_t rssi)
 {
 	pkt->ieee802154_rssi = rssi;
+}
+
+static inline u8_t net_pkt_ieee802154_lqi(struct net_pkt *pkt)
+{
+	return pkt->ieee802154_lqi;
+}
+
+static inline void net_pkt_set_ieee802154_lqi(struct net_pkt *pkt,
+					      u8_t lqi)
+{
+	pkt->ieee802154_lqi = lqi;
 }
 #endif
 
 #define NET_IPV6_HDR(pkt) ((struct net_ipv6_hdr *)net_pkt_ip_data(pkt))
 #define NET_IPV4_HDR(pkt) ((struct net_ipv4_hdr *)net_pkt_ip_data(pkt))
-#define NET_ICMP_HDR(pkt) ((struct net_icmp_hdr *)net_pkt_icmp_data(pkt))
-#define NET_UDP_HDR(pkt)  ((struct net_udp_hdr *)(net_pkt_udp_data(pkt)))
-#define NET_TCP_HDR(pkt)  ((struct net_tcp_hdr *)(net_pkt_tcp_data(pkt)))
 
 static inline void net_pkt_set_src_ipv6_addr(struct net_pkt *pkt)
 {
@@ -414,18 +463,33 @@ static inline void net_pkt_set_src_ipv6_addr(struct net_pkt *pkt)
 /* @endcond */
 
 /**
- * @brief Create a TX net_pkt slab that is used when sending user
- * specified data to network.
+ * @brief Create a net_pkt slab
  *
- * @param name Name of the pool.
+ * A net_pkt slab is used to store meta-information about
+ * network packets. It must be coupled with a data fragment pool
+ * (:c:macro:`NET_PKT_DATA_POOL_DEFINE`) used to store the actual
+ * packet data. The macro can be used by an application to define
+ * additional custom per-context TX packet slabs (see
+ * :c:func:`net_context_setup_pools`).
+ *
+ * @param name Name of the slab.
  * @param count Number of net_pkt in this slab.
  */
-#define NET_PKT_TX_SLAB_DEFINE(name, count)				\
+#define NET_PKT_SLAB_DEFINE(name, count)				\
 	K_MEM_SLAB_DEFINE(name, sizeof(struct net_pkt), count, 4)
 
+/* Backward compatibility macro */
+#define NET_PKT_TX_SLAB_DEFINE(name, count) NET_PKT_SLAB_DEFINE(name, count)
+
 /**
- * @brief Create a DATA net_buf pool that is used when sending user
- * specified data to network.
+ * @brief Create a data fragment net_buf pool
+ *
+ * A net_buf pool is used to store actual data for
+ * network packets. It must be coupled with a net_pkt slab
+ * (:c:macro:`NET_PKT_SLAB_DEFINE`) used to store the packet
+ * meta-information. The macro can be used by an application to
+ * define additional custom per-context TX packet pools (see
+ * :c:func:`net_context_setup_pools`).
  *
  * @param name Name of the pool.
  * @param count Number of net_buf in this pool.
@@ -1208,6 +1272,8 @@ static inline struct net_buf *net_pkt_write_be32(struct net_pkt *pkt,
  * is based on fragment length (only user written data length, any tailroom
  * in fragments does not come to consideration unlike net_pkt_write()) and
  * calculates from input fragment starting position.
+ * If the data pointer is NULL, insert a sequence of zeros with the given
+ * length.
  *
  * Offset examples can be considered from net_pkt_write() api.
  * If the offset is more than already allocated fragments length then it is an
@@ -1217,7 +1283,7 @@ static inline struct net_buf *net_pkt_write_be32(struct net_pkt *pkt,
  * @param frag   Network buffer fragment.
  * @param offset Offset of fragment where insertion will start.
  * @param len    Length of the data to be inserted.
- * @param data   Data to be inserted
+ * @param data   Data to be inserted, can be NULL.
  * @param timeout Affects the action taken should the net buf pool be empty.
  *        If K_NO_WAIT, then return immediately. If K_FOREVER, then
  *        wait as long as necessary. Otherwise, wait up to the specified
@@ -1297,6 +1363,42 @@ int net_pkt_split(struct net_pkt *pkt, struct net_buf *orig_frag,
 		  struct net_buf **fragB, s32_t timeout);
 
 /**
+ * @brief Return the fragment and offset within it according to network
+ * packet offset.
+ *
+ * @details This is typically used to get the protocol header pointer when
+ * we know the offset. According to this information, the corresponding fragment
+ * and position within that fragment is returned.
+ *
+ * @param pkt Network packet
+ * @param offset Offset of desired location in network packet. For example, if
+ * we want to know where UDP header is located after the IPv6 header,
+ * the offset could have a value of sizeof(struct net_ipv6_hdr). Note that this
+ * is a simplified example that does not take into account the possible IPv6
+ * extension headers.
+ * @param pos Pointer to position within result fragment corresponding to
+ * offset param. For example, if the IPv6 header is split between two fragments,
+ * then if we want to know the start of UDP header, the returned pos variable
+ * would indicate how many bytes from second fragment the UDP header starts.
+ *
+ * @return Pointer to the fragment where the the offset is located or
+ *         NULL if there is not enough bytes in the packet
+ */
+struct net_buf *net_frag_get_pos(struct net_pkt *pkt,
+				 u16_t offset,
+				 u16_t *pos);
+
+/**
+ * @brief Clone pkt and its fragment chain.
+ *
+ * @param pkt Original pkt to be cloned
+ * @param timeout Timeout to wait for free net_buf
+ *
+ * @return NULL if error, clone fragment chain otherwise.
+ */
+struct net_pkt *net_pkt_clone(struct net_pkt *pkt, s32_t timeout);
+
+/**
  * @brief Get information about predefined RX, TX and DATA pools.
  *
  * @param rx Pointer to RX pool is returned.
@@ -1308,6 +1410,32 @@ void net_pkt_get_info(struct k_mem_slab **rx,
 		      struct k_mem_slab **tx,
 		      struct net_buf_pool **rx_data,
 		      struct net_buf_pool **tx_data);
+
+/**
+ * @brief Get source socket address.
+ *
+ * @param pkt Network packet
+ * @param addr Source socket address
+ * @param addrlen The length of source socket address
+ * @return 0 on success, <0 otherwise.
+ */
+
+int net_pkt_get_src_addr(struct net_pkt *pkt,
+			 struct sockaddr *addr,
+			 socklen_t addrlen);
+
+/**
+ * @brief Get destination socket address.
+ *
+ * @param pkt Network packet
+ * @param addr Destination socket address
+ * @param addrlen The length of destination socket address
+ * @return 0 on success, <0 otherwise.
+ */
+
+int net_pkt_get_dst_addr(struct net_pkt *pkt,
+			 struct sockaddr *addr,
+			 socklen_t addrlen);
 
 #if defined(CONFIG_NET_DEBUG_NET_PKT)
 /**
@@ -1332,6 +1460,10 @@ const char *net_pkt_pool2str(struct net_buf_pool *pool);
 #else
 #define net_pkt_print(...)
 #endif /* CONFIG_NET_DEBUG_NET_PKT */
+
+/**
+ * @}
+ */
 
 #ifdef __cplusplus
 }

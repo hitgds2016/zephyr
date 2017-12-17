@@ -11,7 +11,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <sections.h>
+#include <linker/sections.h>
 
 #include <ztest.h>
 
@@ -29,7 +29,7 @@
 #define NET_LOG_ENABLED 1
 #include "net_private.h"
 
-#if defined(CONFIG_NET_DEBUG_MLD)
+#if defined(CONFIG_NET_IPV6)
 #define DBG(fmt, ...) printk(fmt, ##__VA_ARGS__)
 #else
 #define DBG(fmt, ...)
@@ -49,7 +49,8 @@ static bool is_join_msg_ok;
 static bool is_leave_msg_ok;
 static bool is_query_received;
 static bool is_report_sent;
-static struct k_sem wait_data;
+static bool ignore_already;
+K_SEM_DEFINE(wait_data, 0, UINT_MAX);
 
 #define WAIT_TIME 500
 #define WAIT_TIME_LONG MSEC_PER_SEC
@@ -90,6 +91,8 @@ static void net_test_iface_init(struct net_if *iface)
 	net_if_set_link_addr(iface, mac, sizeof(struct net_eth_addr),
 			     NET_LINK_ETHERNET);
 }
+
+#define NET_ICMP_HDR(pkt) ((struct net_icmp_hdr *)net_pkt_icmp_data(pkt))
 
 static int tester_send(struct net_if *iface, struct net_pkt *pkt)
 {
@@ -185,20 +188,23 @@ static void mld_setup(void)
 				      NET_ADDR_MANUAL, 0);
 
 	zassert_not_null(ifaddr, "Cannot add IPv6 address");
-
-	/* The semaphore is there to wait the data to be received. */
-	k_sem_init(&wait_data, 0, UINT_MAX);
 }
 
 static void join_group(void)
 {
 	int ret;
 
-	net_ipv6_addr_create(&mcast_addr, 0xff02, 0, 0, 0, 0, 0, 0, 0x0001);
+	/* Using adhoc multicast group outside standard range */
+	net_ipv6_addr_create(&mcast_addr, 0xff10, 0, 0, 0, 0, 0, 0, 0x0001);
 
 	ret = net_ipv6_mld_join(iface, &mcast_addr);
 
-	zassert_equal(ret, 0, "Cannot join IPv6 multicast group");
+	if (ignore_already) {
+		zassert_true(ret == 0 || ret == -EALREADY,
+			     "Cannot join IPv6 multicast group");
+	} else {
+		zassert_equal(ret, 0, "Cannot join IPv6 multicast group");
+	}
 
 	k_yield();
 }
@@ -207,7 +213,7 @@ static void leave_group(void)
 {
 	int ret;
 
-	net_ipv6_addr_create(&mcast_addr, 0xff02, 0, 0, 0, 0, 0, 0, 0x0001);
+	net_ipv6_addr_create(&mcast_addr, 0xff10, 0, 0, 0, 0, 0, 0, 0x0001);
 
 	ret = net_ipv6_mld_leave(iface, &mcast_addr);
 
@@ -219,6 +225,8 @@ static void leave_group(void)
 static void catch_join_group(void)
 {
 	is_group_joined = false;
+
+	ignore_already = false;
 
 	join_group();
 
@@ -253,6 +261,8 @@ static void catch_leave_group(void)
 static void verify_join_group(void)
 {
 	is_join_msg_ok = false;
+
+	ignore_already = false;
 
 	join_group();
 
@@ -387,6 +397,8 @@ static void verify_send_report(void)
 
 	is_query_received = false;
 	is_report_sent = false;
+
+	ignore_already = true;
 
 	join_group();
 

@@ -1,13 +1,21 @@
 #include "armv6-m.dtsi"
+#include <dt-bindings/clock/kinetis_sim.h>
+#include <dt-bindings/i2c/i2c.h>
 
 / {
 	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
 		cpu@0 {
+			device_type = "cpu";
 			compatible = "arm,cortex-m0+";
+			reg = <0>;
 		};
 	};
 
-	sram0: memory {
+	sram0: memory@20000000 {
+		device_type = "memory";
 		compatible = "mmio-sram";
 		reg = <0x20000000 0x4000>;
 	};
@@ -33,21 +41,47 @@
 		};
 
 		sim: sim@40047000 {
-			compatible = "nxp,kw41z-sim";
+			compatible = "nxp,kinetis-sim";
 			reg = <0x40047000 0x1060>;
+			label = "SIM";
 
 			clock-controller;
-			#clock-cells = <2>;
+			#clocks-cells = <3>;
 		};
 
 		flash0: flash@0 {
 			reg = <0 0x80000>;
 		};
 
+		i2c0: i2c@40066000 {
+			compatible = "nxp,kinetis-i2c";
+			clock-frequency = <I2C_BITRATE_STANDARD>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x40066000 0x1000>;
+			interrupts = <8 0>;
+			clocks = <&sim KINETIS_SIM_BUS_CLK 0x1034 6>;
+			label = "I2C_0";
+			status = "disabled";
+		};
+
+		i2c1: i2c@40067000 {
+			compatible = "nxp,kinetis-i2c";
+			clock-frequency = <I2C_BITRATE_STANDARD>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x40067000 0x1000>;
+			interrupts = <9 0>;
+			clocks = <&sim KINETIS_SIM_CORESYS_CLK 0x1034 7>;
+			label = "I2C_1";
+			status = "disabled";
+		};
+
 		lpuart0: lpuart@40054000 {
-			compatible = "nxp,kw41z-lpuart";
+			compatible = "nxp,kinetis-lpuart";
 			reg = <0x40054000 0x18>;
 			interrupts = <12 0>;
+			clocks = <&sim KINETIS_SIM_CORESYS_CLK 0x1038 20>;
 			label = "UART_0";
 
 			pinctrl-0 = <&lpuart0_default>;
@@ -57,9 +91,9 @@
 		};
 
 		pinmux_a: pinmux@40049000 {
-			compatible = "nxp,kw41z-pinmux";
+			compatible = "nxp,kinetis-pinmux";
 			reg = <0x40049000 0xa4>;
-			clocks = <&sim 0x1038 9>;
+			clocks = <&sim KINETIS_SIM_BUS_CLK 0x1038 9>;
 
 			spi1_default: spi1_default {
 				mosi-miso-sck-pcs0 {
@@ -70,15 +104,15 @@
 		};
 
 		pinmux_b: pinmux@4004a000 {
-			compatible = "nxp,kw41z-pinmux";
+			compatible = "nxp,kinetis-pinmux";
 			reg = <0x4004a000 0xa4>;
-			clocks = <&sim 0x1038 10>;
+			clocks = <&sim KINETIS_SIM_BUS_CLK 0x1038 10>;
 		};
 
 		pinmux_c: pinmux@4004b000 {
-			compatible = "nxp,kw41z-pinmux";
+			compatible = "nxp,kinetis-pinmux";
 			reg = <0x4004b000 0xa4>;
-			clocks = <&sim 0x1038 11>;
+			clocks = <&sim KINETIS_SIM_BUS_CLK 0x1038 11>;
 
 			lpuart0_default: lpuart0_default {
 				rx-tx {
@@ -110,7 +144,7 @@
 		};
 
 		gpioa: gpio@400ff000 {
-			compatible = "nxp,kw41z-gpio";
+			compatible = "nxp,kinetis-gpio";
 			reg = <0x400ff000 0x40>;
 			interrupts = <30 2>;
 			gpio-controller;
@@ -118,7 +152,7 @@
 		};
 
 		gpiob: gpio@400ff040 {
-			compatible = "nxp,kw41z-gpio";
+			compatible = "nxp,kinetis-gpio";
 			reg = <0x400ff040 0x40>;
 			interrupts = <31 2>;
 			gpio-controller;
@@ -126,7 +160,7 @@
 		};
 
 		gpioc: gpio@400ff080 {
-			compatible = "nxp,kw41z-gpio";
+			compatible = "nxp,kinetis-gpio";
 			reg = <0x400ff080 0x40>;
 			interrupts = <31 2>;
 			gpio-controller;
@@ -137,7 +171,7 @@
 			compatible = "nxp,kw41z-spi";
 			reg = <0x4002c000 0x9C>;
 			interrupts = <10 0>;
-			clocks = <&sim 0x103C 12>;		/* clk gate */
+			clocks = <&sim KINETIS_SIM_BUS_CLK 0x103C 12>;
 
 			cs = <&gpiob 18 0>, <&gpiob 17 0>;
 			pinctrl-0 = <&spi0_default>;
@@ -148,7 +182,7 @@
 			compatible = "nxp,kw41z-spi";
 			reg = <0x4002d000 0x9C>;
 			interrupts = <29 0>;
-			clocks = <&sim 0x103C 13>;		/* clk gate */
+			clocks = <&sim KINETIS_SIM_BUS_CLK 0x103C 13>;
 			status = "disabled";
 		};
 
@@ -177,6 +211,14 @@
 			period = <1000>;
 			clock-source = <0>;
 			/* channel information needed - fixme */
+		};
+
+		adc0: adc@4003b000{
+			compatible = "nxp,kinetis-adc16";
+			reg = <0x4003b000 0x70>;
+			interrupts = <15 0>;
+			label = "ADC_0";
+			status = "disabled";
 		};
 	};
 };

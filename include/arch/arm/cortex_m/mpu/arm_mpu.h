@@ -44,6 +44,24 @@ struct arm_mpu {
 #define ARM_MPU_PRIVDEFENA	(1 << 2)
 
 #define REGION_VALID	(1 << 4)
+/* ARM MPU RBAR Register */
+/* Region base address mask */
+#define REGION_BASE_ADDR_MASK	0xFFFFFFE0
+
+/* ARM MPU RASR Register */
+/* Region enable bit offset */
+#define REGION_ENABLE_OFFSET	(0)
+/* Region enable bit mask */
+#define REGION_ENABLE_MASK	(0x1 << REGION_ENABLE_OFFSET)
+/* Region size bit offset */
+#define REGION_SIZE_OFFSET	(1)
+/* Region size bit mask */
+#define REGION_SIZE_MASK	(0x1F << REGION_SIZE_OFFSET)
+/* Access permissions bit offset */
+#define ACCESS_PERMS_OFFSET	(24)
+/* Access permissions bit mask */
+#define ACCESS_PERMS_MASK	(0x7 << ACCESS_PERMS_OFFSET)
+
 
 /* eXecute Never */
 #define NOT_EXEC        (0x1 << 28)
@@ -86,8 +104,14 @@ struct arm_mpu {
 #define REGION_RAM_ATTR(size) \
 		(NORMAL_OUTER_INNER_NON_CACHEABLE_NON_SHAREABLE | \
 		 NOT_EXEC | size | FULL_ACCESS)
+#if defined(CONFIG_MPU_ALLOW_FLASH_WRITE)
+#define REGION_FLASH_ATTR(size) \
+		(NORMAL_OUTER_INNER_NON_CACHEABLE_NON_SHAREABLE | size | \
+		 P_RW_U_RO)
+#else
 #define REGION_FLASH_ATTR(size) \
 		(NORMAL_OUTER_INNER_NON_CACHEABLE_NON_SHAREABLE | size | RO)
+#endif
 #define REGION_PPB_ATTR(size) (STRONGLY_ORDERED_SHAREABLE | size | FULL_ACCESS)
 #define REGION_IO_ATTR(size) (DEVICE_NON_SHAREABLE | size | FULL_ACCESS)
 

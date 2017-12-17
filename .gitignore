@@ -7,13 +7,13 @@
 *.swp
 *.swo
 *~
+build
 cscope.*
 .dir
 outdir
 outdir-*
 scripts/basic/fixdep
 scripts/gen_idt/gen_idt
-scripts/gen_offset_header/gen_offset_header
 scripts/kconfig/conf
 scripts/kconfig/mconf
 scripts/kconfig/zconf.hash.c
@@ -31,7 +31,9 @@ sanity-out/
 scripts/grub
 doc/reference/kconfig/CONFIG_*
 doc/reference/kconfig/index.rst
+doc/doc.warnings
 tags
 .project
 .cproject
 .xxproject
+.envrc

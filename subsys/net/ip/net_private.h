@@ -33,6 +33,61 @@ extern char *net_byte_to_hex(char *ptr, u8_t byte, char base, bool pad);
 extern char *net_sprint_ll_addr_buf(const u8_t *ll, u8_t ll_len,
 				    char *buf, int buflen);
 extern u16_t net_calc_chksum(struct net_pkt *pkt, u8_t proto);
+bool net_header_fits(struct net_pkt *pkt, u8_t *hdr, size_t hdr_size);
+
+struct net_icmp_hdr *net_pkt_icmp_data(struct net_pkt *pkt);
+u8_t *net_pkt_icmp_opt_data(struct net_pkt *pkt, size_t opt_len);
+
+/* Check if ICMP header can be directly accessed from memory.
+ * If returned value is NULL, then the header was split into
+ * multiple fragments and user must use net_pkt_read/write() etc to get/set
+ * the ICMP header values.
+ * If returned value is not NULL, then the first fragment will
+ * hold the ICMP header and returned value will point to start of ICMP header
+ * inside net_pkt.
+ */
+static inline
+struct net_icmp_hdr *net_icmp_header_fits(struct net_pkt *pkt,
+					  struct net_icmp_hdr *hdr)
+{
+	if (net_header_fits(pkt, (u8_t *)hdr, sizeof(*hdr))) {
+		return hdr;
+	}
+
+	return NULL;
+}
+
+/* Header may be split between data fragments. In most cases,
+ * net_udp_get_hdr() should be used instead.
+ */
+struct net_udp_hdr *net_pkt_udp_data(struct net_pkt *pkt);
+
+static inline
+struct net_udp_hdr *net_udp_header_fits(struct net_pkt *pkt,
+					struct net_udp_hdr *hdr)
+{
+	if (net_header_fits(pkt, (u8_t *)hdr, sizeof(*hdr))) {
+		return hdr;
+	}
+
+	return NULL;
+}
+
+/* Header may be split between data fragments. In most cases,
+ * net_tcp_get_hdr() should be used instead.
+ */
+struct net_tcp_hdr *net_pkt_tcp_data(struct net_pkt *pkt);
+
+static inline
+struct net_tcp_hdr *net_tcp_header_fits(struct net_pkt *pkt,
+					struct net_tcp_hdr *hdr)
+{
+	if (net_header_fits(pkt, (u8_t *)hdr, sizeof(*hdr))) {
+		return hdr;
+	}
+
+	return NULL;
+}
 
 #if defined(CONFIG_NET_IPV4)
 extern u16_t net_calc_chksum_ipv4(struct net_pkt *pkt);
@@ -110,24 +165,32 @@ static inline char *net_sprint_ip_addr(const struct net_addr *addr)
 	return NULL;
 }
 
-static inline void net_hexdump(const char *str, const u8_t *packet,
-			       size_t length)
+static inline void _hexdump(const u8_t *packet, size_t length, u8_t reserve)
 {
 	char output[sizeof("xxxxyyyy xxxxyyyy")];
 	int n = 0, k = 0;
 	u8_t byte;
-
-	if (!length) {
-		SYS_LOG_DBG("%s zero-length packet", str);
-		return;
-	}
+#if defined(CONFIG_SYS_LOG) && (SYS_LOG_LEVEL > SYS_LOG_LEVEL_OFF)
+	u8_t r = reserve;
+#endif
 
 	while (length--) {
 		if (n % 16 == 0) {
-			printk("%s %08X ", str, n);
+			printk(" %08X ", n);
 		}
 
 		byte = *packet++;
+
+#if defined(CONFIG_SYS_LOG) && (SYS_LOG_LEVEL > SYS_LOG_LEVEL_OFF)
+		if (reserve) {
+			if (r) {
+				printk(SYS_LOG_COLOR_YELLOW);
+				r--;
+			} else {
+				printk(SYS_LOG_COLOR_OFF);
+			}
+		}
+#endif
 
 		printk("%02X ", byte);
 
@@ -157,6 +220,7 @@ static inline void net_hexdump(const char *str, const u8_t *packet,
 		for (i = 0; i < (16 - (n % 16)); i++) {
 			printk("   ");
 		}
+
 		if ((n % 16) < 8) {
 			printk(" "); /* one extra delimiter after 8 chars */
 		}
@@ -165,14 +229,39 @@ static inline void net_hexdump(const char *str, const u8_t *packet,
 	}
 }
 
-/* Hexdump from all fragments */
-static inline void net_hexdump_frags(const char *str, struct net_pkt *pkt)
+static inline void net_hexdump(const char *str,
+			       const u8_t *packet, size_t length)
 {
+	if (!length) {
+		SYS_LOG_DBG("%s zero-length packet", str);
+		return;
+	}
+
+	printk("%s\n", str);
+
+	_hexdump(packet, length, 0);
+}
+
+
+/* Hexdump from all fragments
+ * Set full as true to get also the L2 reserve part printed out
+ */
+static inline void net_hexdump_frags(const char *str,
+				     struct net_pkt *pkt, bool full)
+{
+	u8_t reserve = full ? net_pkt_ll_reserve(pkt) : 0;
 	struct net_buf *frag = pkt->frags;
 
+	printk("%s\n", str);
+
 	while (frag) {
-		net_hexdump(str, frag->data, frag->len);
+		_hexdump(full ? frag->data - reserve : frag->data,
+			 frag->len + reserve, reserve);
 		frag = frag->frags;
+
+		if (full && reserve) {
+			reserve -= net_pkt_ll_reserve(pkt);
+		}
 	}
 }
 
@@ -234,7 +323,7 @@ static inline char *net_sprint_ip_addr(const struct net_addr *addr)
 	return NULL;
 }
 
-#define net_hexdump(str, packet, length)
+#define net_hexdump(...)
 #define net_hexdump_frags(...)
 
 #define net_print_frags(...)

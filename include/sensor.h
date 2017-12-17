@@ -108,8 +108,17 @@ enum sensor_channel {
 	SENSOR_CHAN_RED,
 	/** Illuminance in green spectrum, in lux. */
 	SENSOR_CHAN_GREEN,
+	/** Illuminance in blue spectrum, in lux. */
+	SENSOR_CHAN_BLUE,
 	/** Altitude, in meters */
 	SENSOR_CHAN_ALTITUDE,
+
+	/** 1.0 micro-meters Particulate Matter, in ug/m^3 */
+	SENSOR_CHAN_PM_1_0,
+	/** 2.5 micro-meters Particulate Matter, in ug/m^3 */
+	SENSOR_CHAN_PM_2_5,
+	/** 10 micro-meters Particulate Matter, in ug/m^3 */
+	SENSOR_CHAN_PM_10,
 	/** All channels. */
 	SENSOR_CHAN_ALL,
 };
@@ -263,10 +272,15 @@ struct sensor_driver_api {
  *
  * @return 0 if successful, negative errno code if failure.
  */
-static inline int sensor_attr_set(struct device *dev,
-				  enum sensor_channel chan,
-				  enum sensor_attribute attr,
-				  const struct sensor_value *val)
+__syscall int sensor_attr_set(struct device *dev,
+			      enum sensor_channel chan,
+			      enum sensor_attribute attr,
+			      const struct sensor_value *val);
+
+static inline int _impl_sensor_attr_set(struct device *dev,
+					enum sensor_channel chan,
+					enum sensor_attribute attr,
+					const struct sensor_value *val)
 {
 	const struct sensor_driver_api *api = dev->driver_api;
 
@@ -280,10 +294,12 @@ static inline int sensor_attr_set(struct device *dev,
 /**
  * @brief Activate a sensor's trigger and set the trigger handler
  *
- * The handler will be called from a fiber, so I2C or SPI operations are
- * safe.  However, the fiber's stack is limited and defined by the
+ * The handler will be called from a thread, so I2C or SPI operations are
+ * safe.  However, the thread's stack is limited and defined by the
  * driver.  It is currently up to the caller to ensure that the handler
  * does not overflow the stack.
+ *
+ * This API is not permitted for user threads.
  *
  * @param dev Pointer to the sensor device
  * @param trig The trigger to activate
@@ -321,7 +337,9 @@ static inline int sensor_trigger_set(struct device *dev,
  *
  * @return 0 if successful, negative errno code if failure.
  */
-static inline int sensor_sample_fetch(struct device *dev)
+__syscall int sensor_sample_fetch(struct device *dev);
+
+static inline int _impl_sensor_sample_fetch(struct device *dev)
 {
 	const struct sensor_driver_api *api = dev->driver_api;
 
@@ -347,8 +365,11 @@ static inline int sensor_sample_fetch(struct device *dev)
  *
  * @return 0 if successful, negative errno code if failure.
  */
-static inline int sensor_sample_fetch_chan(struct device *dev,
-					   enum sensor_channel type)
+__syscall int sensor_sample_fetch_chan(struct device *dev,
+				       enum sensor_channel type);
+
+static inline int _impl_sensor_sample_fetch_chan(struct device *dev,
+						 enum sensor_channel type)
 {
 	const struct sensor_driver_api *api = dev->driver_api;
 
@@ -376,9 +397,13 @@ static inline int sensor_sample_fetch_chan(struct device *dev,
  *
  * @return 0 if successful, negative errno code if failure.
  */
-static inline int sensor_channel_get(struct device *dev,
-				     enum sensor_channel chan,
-				     struct sensor_value *val)
+__syscall int sensor_channel_get(struct device *dev,
+				 enum sensor_channel chan,
+				 struct sensor_value *val);
+
+static inline int _impl_sensor_channel_get(struct device *dev,
+					   enum sensor_channel chan,
+					   struct sensor_value *val)
 {
 	const struct sensor_driver_api *api = dev->driver_api;
 
@@ -467,6 +492,7 @@ static inline double sensor_value_to_double(struct sensor_value *val)
 	return (double)val->val1 + (double)val->val2 / 1000000;
 }
 
+#include <syscalls/sensor.h>
 
 #ifdef __cplusplus
 }

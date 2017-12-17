@@ -7,7 +7,8 @@ Overview
 ********
 The SimpleLink Wi-Fi CC3220SF LaunchPad development kit (CC3220SF-LAUNCHXL)
 highlights CC3220SF, a single-chip wireless microcontroller (MCU) with
-1MB Flash, 256KB of RAM and enhanced security features.
+1MB internal flash, 4MB external serial flash, 256KB of RAM and enhanced
+security features.
 
 See the `TI CC3220 Product Page`_ for details.
 
@@ -35,7 +36,7 @@ Hardware
 The CC3220SF SoC has two MCUs:
 
 #. Applications MCU - an ARM |reg| Cortex |reg|-M4 Core at 80 MHz, with 256Kb RAM,
-   and access to external serial 1Mb flash with bootloader and peripheral
+   and access to external serial 4MB flash with bootloader and peripheral
    drivers in ROM.
 
 #. Network Coprocessor (NWP) - a dedicated ARM MCU, which completely
@@ -99,6 +100,10 @@ For Windows developers, see the `CC3220 Getting Started Guide`_ for
 instructions on installation of tools, and how to flash the board using
 UniFlash.
 
+Note that zephyr.bin produced by the Zephyr SDK may not load via
+UniFlash tool.  If encountering difficulties, use the zephyr.elf
+file and dslite.sh instead.
+
 The following instructions are geared towards Linux developers who
 prefer command line tools to an IDE.
 
@@ -132,8 +137,7 @@ Prerequisites:
 
 #. Ensure CONFIG_XIP=y is set.
 
-   The default board configuration file can be found at
-   :file:`boards/arm/cc3220sf_launchxl/cc3220sf_launchxl_defconfig`.
+   Add a 'CONFIG_XIP=y' line to the project's prj.conf file.
 
    This locates the program into flash, and sets CONFIG_CC3220SF_DEBUG=y,
    which prepends a debug header enabling the flash to persist over
@@ -168,7 +172,7 @@ Debugging
 =========
 
 It is possible to enable loading and debugging of an application via
-OpenOCD and gdb, by linking and locating the program completely in SRAM.
+openocd and gdb, by linking and locating the program completely in SRAM.
 
 Prerequisites:
 --------------

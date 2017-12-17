@@ -34,14 +34,17 @@ Hardware
 
 The STM32L432KC SoC provides the following hardware IPs:
 
-- Ultra-low-power with FlexPowerControl (down to 28 nA Standby mode and 84 μA/MHz run mode)
-- Core: ARM® 32-bit Cortex®-M4 CPU with FPU, frequency up to 80 MHz, 100DMIPS/1.25DMIPS/MHz (Dhrystone 2.1)
+- Ultra-low-power with FlexPowerControl (down to 28 nA Standby mode and 84
+  |micro| A/MHz run mode)
+- Core: ARM |reg| 32-bit Cortex |reg| -M4 CPU with FPU, frequency up to 80 MHz,
+  100DMIPS/1.25DMIPS/MHz (Dhrystone 2.1)
 - Clock Sources:
 
         - 32 kHz crystal oscillator for RTC (LSE)
-        - Internal 16 MHz factory-trimmed RC (±1%)
-        - Internal low-power 32 kHz RC (±5%)
-        - Internal multispeed 100 kHz to 48 MHz oscillator, auto-trimmed by LSE (better than ±0.25 % accuracy)
+        - Internal 16 MHz factory-trimmed RC ( |plusminus| 1%)
+        - Internal low-power 32 kHz RC ( |plusminus| 5%)
+        - Internal multispeed 100 kHz to 48 MHz oscillator, auto-trimmed by
+          LSE (better than |plusminus| 0.25 % accuracy)
         - 2 PLLs for system clock, USB, audio, ADC
 
 - RTC with HW calendar, alarms and calibration
@@ -64,7 +67,8 @@ The STM32L432KC SoC provides the following hardware IPs:
 
 - Rich analog peripherals (independent supply)
 
-        - 1× 12-bit ADC 5 MSPS, up to 16-bit with hardware oversampling, 200 μA/MSPS
+        - 1x 12-bit ADC 5 MSPS, up to 16-bit with hardware oversampling, 200
+          |micro| A/MSPS
         - 2x 12-bit DAC, low-power sample and hold
         - 1x operational amplifiers with built-in PGA
         - 2x ultra-low-power comparators
@@ -83,7 +87,7 @@ The STM32L432KC SoC provides the following hardware IPs:
 - 14-channel DMA controller
 - True random number generator
 - CRC calculation unit, 96-bit unique ID
-- Development support: serial wire debug (SWD), JTAG, Embedded Trace Macrocell™
+- Development support: serial wire debug (SWD), JTAG, Embedded Trace Macrocell*
 
 
 More information about STM32L432KC can be found here:
@@ -164,50 +168,36 @@ Default settings are 115200 8N1.
 Programming and Debugging
 *************************
 
+Applications for the ``nucleo_l432kc`` board configuration can be built and
+flashed in the usual way (see :ref:`build_an_application` and
+:ref:`application_run` for more details).
+
 Flashing
 ========
 
-Nucleo L432KC board includes an ST-LINK/V2-1 embedded debug tool interface.
-This interface is not supported by the openocd version 0.9 included by the Zephyr SDK v0.9.
-Until we update the Zephyr SDK, use openocd v0.10.0 from the openocd-stm32 project on GitHub
-to get the minimum set of scripts needed to flash and debug STM32 development boards.
-
-.. code-block:: console
-
-   $ git clone  https://github.com/erwango/openocd-stm32.git
-
-Then follow instructions in README.md
-
+Nucleo L432KC board includes an ST-LINK/V2-1 embedded debug tool
+interface.  This interface is supported by the openocd version
+included in the Zephyr SDK since v0.9.2.
 
 Flashing an application to Nucleo L432KC
 ----------------------------------------
 
-The sample application :ref:`hello_world` is being used in this tutorial:
-
-To build the Zephyr kernel and application, enter:
-
-.. code-block:: console
-
-   $ cd <zephyr_root_path>
-   $ source zephyr-env.sh
-   $ cd $ZEPHYR_BASE/samples/hello_world/
-   $ make BOARD=nucleo_l432kc
-
-Connect the Nucleo L432KC to your host computer using the USB port.
-Then, enter the following command:
-
-.. code-block:: console
-
-   $ cd <openocd-stm32_path>
-   $ stm32_flsh l4 $ZEPHYR_BASE/samples/hello_world/outdir/nucleo_l432kc/zephyr.bin
-
-Run a serial host program to connect with your Nucleo board.
+Connect the Nucleo L432KC to your host computer using the USB port,
+then run a serial host program to connect with your Nucleo board.
 
 .. code-block:: console
 
    $ minicom -D /dev/ttyACM0
 
-You should see the following message:
+Now build and flash an application. Here is an example for
+:ref:`hello_world`.
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/hello_world
+   :board: nucleo_l432kc
+   :goals: build flash
+
+You should see the following message on the console:
 
 .. code-block:: console
 
@@ -217,12 +207,14 @@ You should see the following message:
 Debugging
 =========
 
-Access gdb with the following make command:
+You can debug an application in the usual way.  Here is an example for the
+:ref:`hello_world` application.
 
-.. code-block:: console
-
-   $ cd <openocd-stm32_path>
-   $ stm32_dbg l4 $ZEPHYR_BASE/samples/hello_world/outdir/nucleo_l432kc/zephyr.elf
+.. zephyr-app-commands::
+   :zephyr-app: samples/hello_world
+   :board: nucleo_l432kc
+   :maybe-skip-config:
+   :goals: debug
 
 .. _Nucleo L432KC website:
    http://www.st.com/en/evaluation-tools/nucleo-l432kc.html

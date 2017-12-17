@@ -6,7 +6,7 @@
 
 #include <zephyr.h>
 
-#include <sections.h>
+#include <linker/sections.h>
 #include <toolchain.h>
 
 #include <misc/printk.h>
@@ -28,7 +28,7 @@
 
 #define TCP_RX_FIBER_STACK_SIZE 1024
 
-static char __noinit __stack zperf_tcp_rx_stack[TCP_RX_FIBER_STACK_SIZE];
+static K_THREAD_STACK_DEFINE(zperf_tcp_rx_stack, TCP_RX_FIBER_STACK_SIZE);
 static struct k_thread zperf_tcp_rx_thread_data;
 
 #if defined(CONFIG_NET_IPV6)
@@ -63,17 +63,14 @@ static void tcp_received(struct net_context *context,
 	case STATE_COMPLETED:
 		printk(TAG "New session started\n");
 		zperf_reset_session_stats(session);
-		session->start_time =  sys_cycle_get_32();
+		session->start_time = k_cycle_get_32();
 		session->state = STATE_ONGOING;
 		/* fall through */
 	case STATE_ONGOING:
 		session->counter++;
+		session->length += net_pkt_appdatalen(pkt);
 
-		if (pkt) {
-			session->length += net_pkt_appdatalen(pkt);
-		}
-
-		if (!pkt && status == 0) { /* EOF */
+		if (status == 0) { /* EOF */
 			u32_t rate_in_kbps;
 			u32_t duration = HW_CYCLES_TO_USEC(
 				time_delta(session->start_time, time));
@@ -192,7 +189,7 @@ static void zperf_tcp_rx_thread(int port)
 			return;
 		}
 
-		ret = net_context_accept(context6, tcp_accepted, 0, NULL);
+		ret = net_context_accept(context6, tcp_accepted, K_NO_WAIT, NULL);
 		if (ret < 0) {
 			printk(TAG "Cannot receive IPv6 TCP packets (%d)", ret);
 			return;
@@ -217,7 +214,7 @@ static void zperf_tcp_rx_thread(int port)
 			return;
 		}
 
-		ret = net_context_accept(context4, tcp_accepted, 0, NULL);
+		ret = net_context_accept(context4, tcp_accepted, K_NO_WAIT, NULL);
 		if (ret < 0) {
 			printk(TAG "Cannot receive IPv4 TCP packets (%d)", ret);
 			return;
@@ -242,7 +239,7 @@ void zperf_tcp_receiver_init(int port)
 #endif
 
 	k_thread_create(&zperf_tcp_rx_thread_data, zperf_tcp_rx_stack,
-			sizeof(zperf_tcp_rx_stack),
+			K_THREAD_STACK_SIZEOF(zperf_tcp_rx_stack),
 			(k_thread_entry_t)zperf_tcp_rx_thread,
 			INT_TO_POINTER(port), 0, 0,
 			K_PRIO_COOP(7), 0, K_NO_WAIT);

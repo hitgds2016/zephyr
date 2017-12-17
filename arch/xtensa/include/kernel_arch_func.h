@@ -40,7 +40,7 @@ static ALWAYS_INLINE void kernel_arch_init(void)
 {
 	_kernel.nested = 0;
 #if XCHAL_CP_NUM > 0
-	/* Initialize co-processor management for tasks.
+	/* Initialize co-processor management for threads.
 	 * Leave CPENABLE alone.
 	 */
 	_xt_coproc_init();
@@ -75,9 +75,6 @@ extern void k_cpu_atomic_idle(unsigned int imask);
 static inline void _IntLibInit(void)
 {
 }
-
-FUNC_NORETURN void _NanoFatalErrorHandler(unsigned int reason,
-					  const NANO_ESF *pEsf);
 
 #include <stddef.h> /* For size_t */
 

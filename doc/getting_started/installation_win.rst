@@ -20,6 +20,9 @@ Windows system with the latest updates installed.
 Installing Requirements and Dependencies
 ****************************************
 
+Using MSYS2
+===========
+
 The Zephyr development environment on Windows relies on MSYS2, a modern UNIX
 environment for Windows. Follow the steps below to set it up:
 
@@ -39,6 +42,12 @@ environment for Windows. Follow the steps below to set it up:
         Make sure you start ``MSYS2 MSYS Shell``, not ``MSYS2 MinGW Shell``.
 
    .. note::
+
+        If you need to inherit the existing Windows environment variables into
+        MSYS2 you will need to create a **Windows** environment variable like so::
+        ``MSYS2_PATH_TYPE=inherit``.
+
+   .. note::
         There are multiple ``export`` statements in this tutorial. You can avoid
         typing them every time by placing them at the bottom of your
         ``~/.bash_profile`` file.
@@ -49,46 +58,29 @@ environment for Windows. Follow the steps below to set it up:
       $ export http_proxy=http://proxy.mycompany.com:123
       $ export https_proxy=$http_proxy
 
-#. Install the dependencies required to build Zephyr:
+#. Update MSYS2's packages and install the dependencies required to build
+   Zephyr (you may need to restart the MSYS2 shell):
 
    .. code-block:: console
 
-      $ pacman -S git make gcc diffutils ncurses-devel python3
+      $ pacman -Syu
+      $ pacman -S git cmake make gcc dtc diffutils ncurses-devel python3 gperf
+
+#. From within the MSYS2 MSYS Shell, clone a copy of the Zephyr source into
+   your home directory using Git:
+
+   .. code-block:: console
+
+      $ cd ~
+      $ git clone https://github.com/zephyrproject-rtos/zephyr.git
 
 #. Install pip and the required Python modules::
 
       $ curl -O 'https://bootstrap.pypa.io/get-pip.py'
       $ ./get-pip.py
       $ rm get-pip.py
-
-      $ pip install pyaml
-
-#. Build the Device Tree Compiler (DTC)
-
-   For the architectures and boards listed in the ``dts/`` folder of the Zephyr
-   source tree, the DTC is required to be able to build Zephyr.
-   To set up the DTC follow the instructions below:
-
-   * Install the required build tools::
-
-        $ pacman -S bison
-        $ pacman -R flex
-        $ pacman -U http://repo.msys2.org/msys/x86_64/flex-2.6.0-1-x86_64.pkg.tar.xz
-
-   .. note::
-        At this time we need to pin the ``flex`` version to an older one due
-        to an issue with the latest available.
-
-   * Clone and build the DTC::
-
-        $ cd ~
-        $ git clone https://git.kernel.org/pub/scm/utils/dtc/dtc.git
-        $ cd dtc
-        $ make
-
-   * Export the location of the DTC::
-
-        $ export DTC=~/dtc/dtc
+      $ cd ~/zephyr   # or to the folder where you cloned the zephyr repo
+      $ pip install --user -r scripts/requirements.txt
 
 #. The build system should now be ready to work with any toolchain installed in
    your system. In the next step you'll find instructions for installing
@@ -120,15 +112,7 @@ environment for Windows. Follow the steps below to set it up:
    * For ARM, install GNU ARM Embedded from the ARM developer website:
      `GNU ARM Embedded`_ (install to :file:`c:\\gccarmemb`).
 
-#. From within the `MSYS2 MSYS Shell`, clone a copy of the Zephyr source into
-   your home directory using Git:
-
-   .. code-block:: console
-
-      $ cd ~
-      $ git clone https://github.com/zephyrproject-rtos/zephyr.git
-
-#. Also within the MSYS console, set up environment variables for the installed
+#. Within the MSYS console, set up environment variables for the installed
    tools and for the Zephyr environment (using the provided shell script):
 
    For x86:
@@ -153,31 +137,68 @@ environment for Windows. Follow the steps below to set it up:
    .. code-block:: console
 
       $ unset ZEPHYR_SDK_INSTALL_DIR
-      $ source ~/zephyr/zephyr-env.sh
+      $ cd <zephyr git clone location>
+      $ source zephyr-env.sh
+
+#. Within the MSYS console, build Kconfig in :file:`$ZEPHYR_BASE/build` and
+    add it to path
+
+   .. code-block:: console
+
+      $ cd $ZEPHYR_BASE
+      $ mkdir build && cd build
+      $ cmake $ZEPHYR_BASE/scripts
+      $ make
+      $ echo "export PATH=$PWD/kconfig:\$PATH" >> $HOME/.zephyrrc
+      $ source $ZEPHYR_BASE/zephyr-env.sh
+
+    .. note::
+
+        You only need to do this once after cloning the git repository.
 
 #. Finally, you can try building the :ref:`hello_world` sample to check things
    out.
 
-   To build for the Intel |reg| Quark |trade| (x86-based) Arduino 101:
+To build for the Intel |reg| Quark |trade| (x86-based) Arduino 101:
 
-    .. code-block:: console
+.. zephyr-app-commands::
+  :zephyr-app: samples/hello_world
+  :board: arduino_101
+  :goals: build
 
-       $ cd $ZEPHYR_BASE/samples/hello_world
-       $ make BOARD=arduino_101
+To build for the ARM-based Nordic nRF52 Development Kit:
 
-   To build for the ARM-based Nordic nRF52 Development Kit:
+.. zephyr-app-commands::
+  :zephyr-app: samples/hello_world
+  :board: nrf52_pca10040
+  :goals: build
 
-    .. code-block:: console
+This should check that all the tools and toolchain are set up correctly for
+your own Zephyr development.
 
-       $ cd $ZEPHYR_BASE/samples/hello_world
-       $ make BOARD=nrf52_pca10040
+Using Windows 10 WSL (Windows Subsystem for Linux)
+==================================================
 
+If you are running a recent version of Windows 10 you can make use of the
+built-in functionality to natively run Ubuntu binaries directly on a standard
+command-prompt. This allows you to install the standard Zephyr SDK and build
+for all supported architectures without the need for a Virtual Machine.
 
-    This should check that all the tools and toolchain are set up correctly for
-    your own Zephyr development.
+#. Install Windows Subsystem for Linux (WSL) following the instructions on the
+   official Microsoft website: `WSL Installation`_
 
+   .. note::
+         For the Zephyr SDK to function properly you will need Windows 10
+         build 15002 or greater. You can check which Windows 10 build you are
+         running in the "About your PC" section of the System Settings.
+         If you are running an older Windows 10 build you might need to install
+         the Creator's Update.
+
+#. Follow the instructions for Ubuntu detailed in the Zephyr Linux Getting
+   Started Guide which can be found here: :ref:`installation_linux`
 
 .. _GNU ARM Embedded: https://developer.arm.com/open-source/gnu-toolchain/gnu-rm/downloads
 .. _MSYS2 website: http://www.msys2.org/
 .. _ISSM Toolchain: https://software.intel.com/en-us/articles/issm-toolchain-only-download
 .. _Getting Started on Arduino 101 with ISSM: https://software.intel.com/en-us/articles/getting-started-arduino-101genuino-101-with-intel-system-studio-for-microcontrollers
+.. _WSL Installation: https://msdn.microsoft.com/en-us/commandline/wsl/install_guide

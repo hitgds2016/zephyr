@@ -11,7 +11,7 @@ config CPU_CORTEX
 	# Omit prompt to signify "hidden" option
 	default n
 	help
-	This option signifies the use of a CPU of the Cortex family.
+	  This option signifies the use of a CPU of the Cortex family.
 
 config CPU_CORTEX_M
 	bool
@@ -22,53 +22,36 @@ config CPU_CORTEX_M
 	select HAS_CMSIS
 	select HAS_FLASH_LOAD_OFFSET
 	select HAS_DTS
+	select ARCH_HAS_STACK_PROTECTION if ARM_CORE_MPU
+	select ARCH_HAS_USERSPACE if ARM_CORE_MPU
 	help
-	This option signifies the use of a CPU of the Cortex-M family.
+	  This option signifies the use of a CPU of the Cortex-M family.
 
 config CPU_HAS_SYSTICK
 	bool
 	# Omit prompt to signify "hidden" option
 	default n
 	help
-	This option is enabled when the CPU has systick timer implemented.
+	  This option is enabled when the CPU has systick timer implemented.
 
-config CPU_HAS_MPU
+config ARM_STACK_PROTECTION
 	bool
-	# Omit prompt to signify "hidden" option
-	default n
+	default y if HW_STACK_PROTECTION
+	select MPU_STACK_GUARD if ARM_CORE_MPU
 	help
-	  This option is enabled when the CPU has a Memory Protection Unit (MPU).
+	  This option enables MPU stack guard to cause a system fatal error
+	  if the bounds of the current process stack are overflowed.
 
-config CPU_HAS_FPU
-	# Hidden config selected by CPU family
+config ARM_USERSPACE
 	bool
-	default n
+	default y if USERSPACE
 	help
-	This option is enabled when the CPU has a hardware floating point
-	unit.
+	  This option enables APIs to drop a thread's privileges,	supporting
+	  user-level threads that are protected from each other and from
+	  crashing the kernel.
 
-menu "Floating Point Options"
+menu "Architectue Floating Point Options"
 depends on CPU_HAS_FPU
-
-config	FLOAT
-	bool
-	prompt "Floating point registers"
-	default n
-	help
-	This option allows tasks and fibers to use the floating point registers.
-	By default, only a single task or fiber may use the registers.
-
-	Disabling this option means that any task or fiber that uses a
-	floating point register will get a fatal exception.
-
-config	FP_SHARING
-	bool
-	prompt "Floating point register sharing"
-	depends on FLOAT
-	default n
-	help
-	This option allows multiple tasks and fibers to use the floating point
-	registers.
 
 choice
 	prompt "Floating point ABI"
@@ -79,16 +62,16 @@ config FP_HARDABI
 	bool "Floating point Hard ABI"
 	depends on FLOAT
 	help
-	This option selects the Floating point ABI in which hardware floating
-	point instructions are generated and uses FPU-specific calling
-	conventions
+	  This option selects the Floating point ABI in which hardware floating
+	  point instructions are generated and uses FPU-specific calling
+	  conventions
 
 config FP_SOFTABI
 	bool "Floating point Soft ABI"
 	depends on FLOAT
 	help
-	This option selects the Floating point ABI in which hardware floating
-	point instructions are generated but soft-float calling conventions.
+	  This option selects the Floating point ABI in which hardware floating
+	  point instructions are generated but soft-float calling conventions.
 
 endchoice
 

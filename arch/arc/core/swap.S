@@ -110,6 +110,13 @@ SECTION_FUNC(TEXT, __swap)
 
 	_load_callee_saved_regs
 
+#ifdef CONFIG_MPU_STACK_GUARD
+	push_s r2
+	mov r0, r2
+	bl configure_mpu_stack_guard
+	pop_s r2
+#endif
+
 	ld_s r3, [r2, _thread_offset_to_relinquish_cause]
 
 	breq r3, _CAUSE_RIRQ, _swap_return_from_rirq
@@ -157,7 +164,7 @@ _swap_already_in_irq:
 .balign 4
 _return_from_exc_irq:
 	_pop_irq_stack_frame
-	sub_s sp, sp, 8
+	sub_s sp, sp, ___isf_t_status32_OFFSET - ___isf_t_pc_OFFSET + 4
 
 _return_from_exc:
 
@@ -166,7 +173,7 @@ _return_from_exc:
 	sr ilink, [_ARC_V2_ERET]
 
 	/* put status32 into estatus */
-	ld ilink, [sp, 4] /* status32 into ilink */
+	ld ilink, [sp, ___isf_t_status32_OFFSET - ___isf_t_pc_OFFSET]
 	sr ilink, [_ARC_V2_ERSTATUS]
-	add_s sp, sp, 8
+	add_s sp, sp, ___isf_t_status32_OFFSET - ___isf_t_pc_OFFSET + 4
 	rtie

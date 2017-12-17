@@ -15,7 +15,7 @@
 
 #include <offsets_short.h>
 #include <toolchain.h>
-#include <sections.h>
+#include <linker/sections.h>
 #include <sw_isr_table.h>
 #include <kernel_structs.h>
 #include <arch/cpu.h>
@@ -23,12 +23,24 @@
 GTEXT(_isr_wrapper)
 GTEXT(_isr_demux)
 
+GDATA(exc_nest_count)
+SECTION_VAR(BSS, exc_nest_count)
+	.balign 4
+	.word 0
+
+
 #if CONFIG_RGF_NUM_BANKS == 1
 GDATA(saved_r0)
 
-	.balign 4
 SECTION_VAR(BSS, saved_r0)
-        .word 0
+	.balign 4
+	.word 0
+#else
+GDATA(saved_sp)
+
+SECTION_VAR(BSS, saved_sp)
+	.balign 4
+	.word 0
 #endif
 
 #if defined(CONFIG_SYS_POWER_MANAGEMENT)
@@ -108,8 +120,8 @@ registers (to avoid stack accesses). It is possible to register a FIRQ
 handler that operates outside of the kernel, but care must be taken to only
 use instructions that only use the banked registers.
 
-The kernel is able to handle transitions to and from FIRQ, RIRQ and threads
-(fibers/task). The contexts are saved 'lazily': the minimum amount of work is
+The kernel is able to handle transitions to and from FIRQ, RIRQ and threads.
+The contexts are saved 'lazily': the minimum amount of work is
 done upfront, and the rest is done when needed:
 
 o RIRQ
@@ -117,7 +129,7 @@ o RIRQ
   All needed regisers to run C code in the ISR are saved automatically
   on the outgoing thread's stack: loop, status32, pc, and the caller-
   saved GPRs. That stack frame layout is pre-determined. If returning
-  to a fiber, the stack is popped and no registers have to be saved by
+  to a thread, the stack is popped and no registers have to be saved by
   the kernel. If a context switch is required, the callee-saved GPRs
   are then saved in the thread control structure (TCS).
 
@@ -139,7 +151,7 @@ o FIRQ
   During early initialization, the sp in the 2nd register bank is made to
   refer to _firq_stack. This allows for the FIRQ handler to use its own stack.
   GPRs are banked, loop registers are saved in unused callee saved regs upon
-  interrupt entry. If returning to a fiber, loop registers are restored and the
+  interrupt entry. If returning to a thread, loop registers are restored and the
   CPU switches back to bank 0 for the GPRs. If a context switch is
   needed, at this point only are all the registers saved. First, a
   stack frame with the same layout as the automatic RIRQ one is created
@@ -217,6 +229,7 @@ From RIRQ:
  */
 
 SECTION_FUNC(TEXT, _isr_wrapper)
+#if CONFIG_ARC_FIRQ
 #if CONFIG_RGF_NUM_BANKS == 1
 	st r0,[saved_r0]
 #endif
@@ -230,6 +243,14 @@ SECTION_FUNC(TEXT, _isr_wrapper)
 	push_s r0
 	mov r0,ilink
 	push_s r0
+#ifdef CONFIG_CODE_DENSITY
+	lr r0, [_ARC_V2_JLI_BASE]
+	push_s r0
+	lr r0, [_ARC_V2_LDI_BASE]
+	push_s r0
+	lr r0, [_ARC_V2_EI_BASE]
+	push_s r0
+#endif
 	mov r0,lp_count
 	push_s r0
 	lr r0, [_ARC_V2_LP_START]
@@ -264,6 +285,11 @@ rirq_path:
 	mov.z r2, _firq_enter
 	mov.nz r3, _rirq_exit
 	mov.nz r2, _rirq_enter
+	j_s [r2]
+#endif
+#else
+	mov r3, _rirq_exit
+	mov r2, _rirq_enter
 	j_s [r2]
 #endif
 
@@ -325,6 +351,7 @@ _skip_sys_power_save_idle_exit:
 SECTION_FUNC(TEXT, _isr_demux)
 	push_s r3
 
+
 	/* cannot be done before this point because we must be able to run C */
 	/* r0 is available to be stomped here, and exit_tickless_idle uses it */
 	exit_tickless_idle
@@ -332,6 +359,12 @@ SECTION_FUNC(TEXT, _isr_demux)
 	log_sleep_k_event
 
 	lr r0, [_ARC_V2_ICAUSE]
+	/* handle software triggered interrupt */
+	lr	r3, [_ARC_V2_AUX_IRQ_HINT]
+	brne	r3, r0, irq_hint_handled
+	sr	0, [_ARC_V2_AUX_IRQ_HINT]
+irq_hint_handled:
+
 	sub r0, r0, 16
 
 	mov r1, _sw_isr_table

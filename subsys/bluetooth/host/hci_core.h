@@ -10,7 +10,7 @@
 #define LE_CONN_LATENCY		0x0000
 #define LE_CONN_TIMEOUT		0x002a
 
-#if defined(CONFIG_BLUETOOTH_BREDR)
+#if defined(CONFIG_BT_BREDR)
 #define LMP_FEAT_PAGES_COUNT	3
 #else
 #define LMP_FEAT_PAGES_COUNT	1
@@ -39,14 +39,17 @@ enum {
 	BT_DEV_SCANNING,
 	BT_DEV_EXPLICIT_SCAN,
 	BT_DEV_ACTIVE_SCAN,
+	BT_DEV_SCAN_FILTER_DUP,
 
 	BT_DEV_RPA_VALID,
 
-#if defined(CONFIG_BLUETOOTH_BREDR)
+	BT_DEV_ID_PENDING,
+
+#if defined(CONFIG_BT_BREDR)
 	BT_DEV_ISCAN,
 	BT_DEV_PSCAN,
 	BT_DEV_INQUIRY,
-#endif /* CONFIG_BLUETOOTH_BREDR */
+#endif /* CONFIG_BT_BREDR */
 
 	/* Total number of flags - must be at the end of the enum */
 	BT_DEV_NUM_FLAGS,
@@ -58,14 +61,23 @@ struct bt_dev_le {
 	/* LE states */
 	u64_t			states;
 
-#if defined(CONFIG_BLUETOOTH_CONN)
+#if defined(CONFIG_BT_CONN)
 	/* Controller buffer information */
 	u16_t			mtu;
 	struct k_sem		pkts;
-#endif /* CONFIG_BLUETOOTH_CONN */
+#endif /* CONFIG_BT_CONN */
+
+#if defined(CONFIG_BT_SMP)
+	/* Size of the the controller resolving list */
+	u8_t                    rl_size;
+	/* Number of entries in the resolving list. rl_entries > rl_size
+	 * means that host-side resolving is used.
+	 */
+	u8_t                    rl_entries;
+#endif /* CONFIG_BT_SMP */
 };
 
-#if defined(CONFIG_BLUETOOTH_BREDR)
+#if defined(CONFIG_BT_BREDR)
 struct bt_dev_br {
 	/* Max controller's acceptable ACL packet length */
 	u16_t         mtu;
@@ -73,6 +85,14 @@ struct bt_dev_br {
 	u16_t         esco_pkt_type;
 };
 #endif
+
+/* The theoretical max for these is 8 and 64, but there's no point
+ * in allocating the full memory if we only support a small subset.
+ * These values must be updated whenever the host implementation is
+ * extended beyond the current values.
+ */
+#define BT_DEV_VS_FEAT_MAX  1
+#define BT_DEV_VS_CMDS_MAX  2
 
 /* State tracking for the local Bluetooth controller */
 struct bt_dev {
@@ -95,6 +115,12 @@ struct bt_dev {
 	/* Supported commands */
 	u8_t			supported_commands[64];
 
+#if defined(CONFIG_BT_HCI_VS_EXT)
+	/* Vendor HCI support */
+	u8_t                    vs_features[BT_DEV_VS_FEAT_MAX];
+	u8_t                    vs_commands[BT_DEV_VS_CMDS_MAX];
+#endif
+
 	struct k_work           init;
 
 	ATOMIC_DEFINE(flags, BT_DEV_NUM_FLAGS);
@@ -102,7 +128,7 @@ struct bt_dev {
 	/* LE controller specific features */
 	struct bt_dev_le	le;
 
-#if defined(CONFIG_BLUETOOTH_BREDR)
+#if defined(CONFIG_BT_BREDR)
 	/* BR/EDR controller specific features */
 	struct bt_dev_br	br;
 #endif
@@ -113,7 +139,7 @@ struct bt_dev {
 	/* Last sent HCI command */
 	struct net_buf		*sent_cmd;
 
-#if !defined(CONFIG_BLUETOOTH_RECV_IS_RX_THREAD)
+#if !defined(CONFIG_BT_RECV_IS_RX_THREAD)
 	/* Queue for incoming HCI events & ACL data */
 	struct k_fifo		rx_queue;
 #endif
@@ -130,7 +156,7 @@ struct bt_dev {
 	/* Registered HCI driver */
 	const struct bt_hci_driver *drv;
 
-#if defined(CONFIG_BLUETOOTH_PRIVACY)
+#if defined(CONFIG_BT_PRIVACY)
 	/* Local Identity Resolving Key */
 	u8_t			irk[16];
 
@@ -141,9 +167,9 @@ struct bt_dev {
 
 extern struct bt_dev bt_dev;
 extern const struct bt_storage *bt_storage;
-#if defined(CONFIG_BLUETOOTH_SMP) || defined(CONFIG_BLUETOOTH_BREDR)
+#if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_BREDR)
 extern const struct bt_conn_auth_cb *bt_auth;
-#endif /* CONFIG_BLUETOOTH_SMP || CONFIG_BLUETOOTH_BREDR */
+#endif /* CONFIG_BT_SMP || CONFIG_BT_BREDR */
 
 bool bt_le_conn_params_valid(const struct bt_le_conn_param *param);
 
@@ -159,3 +185,8 @@ bool bt_addr_le_is_bonded(const bt_addr_le_t *addr);
 int bt_send(struct net_buf *buf);
 
 u16_t bt_hci_get_cmd_opcode(struct net_buf *buf);
+
+/* Don't require everyone to include keys.h */
+struct bt_keys;
+int bt_id_add(struct bt_keys *keys);
+int bt_id_del(struct bt_keys *keys);

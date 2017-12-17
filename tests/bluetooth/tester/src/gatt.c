@@ -9,6 +9,7 @@
 #include <zephyr/types.h>
 #include <string.h>
 #include <errno.h>
+#include <assert.h>
 
 #include <toolchain.h>
 #include <bluetooth/bluetooth.h>
@@ -23,6 +24,7 @@
 
 #define CONTROLLER_INDEX 0
 #define MAX_BUFFER_SIZE 2048
+#define MAX_UUID_LEN 16
 
 /* This masks Permission bits from GATT API */
 #define GATT_PERM_MASK			(BT_GATT_PERM_READ | \
@@ -40,6 +42,7 @@
 #define GATT_PERM_WRITE_AUTHORIZATION	0x80
 
 /* GATT server context */
+#define SERVER_MAX_SERVICES		10
 #define SERVER_MAX_ATTRIBUTES		50
 #define SERVER_BUF_SIZE			2048
 
@@ -50,6 +53,7 @@
 #define server_buf_push(_len)	net_buf_push(server_buf, ROUND_UP(_len, 4))
 #define server_buf_pull(_len)	net_buf_pull(server_buf, ROUND_UP(_len, 4))
 
+static struct bt_gatt_service server_svcs[SERVER_MAX_SERVICES];
 static struct bt_gatt_attr server_db[SERVER_MAX_ATTRIBUTES];
 static struct net_buf *server_buf;
 NET_BUF_POOL_DEFINE(server_pool, 1, SERVER_BUF_SIZE, 0, NULL);
@@ -196,9 +200,20 @@ static void supported_commands(u8_t *data, u16_t len)
 	tester_set_bit(cmds, GATT_WRITE_LONG);
 	tester_set_bit(cmds, GATT_CFG_NOTIFY);
 	tester_set_bit(cmds, GATT_CFG_INDICATE);
+	tester_set_bit(cmds, GATT_GET_ATTRIBUTES);
+	tester_set_bit(cmds, GATT_GET_ATTRIBUTE_VALUE);
 
 	tester_send(BTP_SERVICE_ID_GATT, GATT_READ_SUPPORTED_COMMANDS,
 		    CONTROLLER_INDEX, (u8_t *) rp, sizeof(cmds));
+}
+
+static int register_service(void)
+{
+	server_svcs[svc_count].attrs = server_db +
+				       (attr_count - svc_attr_count);
+	server_svcs[svc_count].attr_count = svc_attr_count;
+
+	return bt_gatt_service_register(&server_svcs[svc_count]);
 }
 
 static void add_service(u8_t *data, u16_t len)
@@ -218,8 +233,7 @@ static void add_service(u8_t *data, u16_t len)
 
 	/* Register last defined service */
 	if (svc_count) {
-		if (bt_gatt_register(server_db + (attr_count - svc_attr_count),
-				     svc_attr_count)) {
+		if (register_service()) {
 			goto fail;
 		}
 	}
@@ -287,6 +301,19 @@ static ssize_t read_value(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 				 value->len);
 }
 
+static void attr_value_changed_ev(u16_t handle, const u8_t *value, u16_t len)
+{
+	u8_t buf[len + sizeof(struct gatt_attr_value_changed_ev)];
+	struct gatt_attr_value_changed_ev *ev = (void *) buf;
+
+	ev->handle = sys_cpu_to_le16(handle);
+	ev->data_length = sys_cpu_to_le16(len);
+	memcpy(ev->data, value, len);
+
+	tester_send(BTP_SERVICE_ID_GATT, GATT_EV_ATTR_VALUE_CHANGED,
+		    CONTROLLER_INDEX, buf, sizeof(buf));
+}
+
 static ssize_t write_value(struct bt_conn *conn,
 			   const struct bt_gatt_attr *attr, const void *buf,
 			   u16_t len, u16_t offset, u8_t flags)
@@ -316,6 +343,11 @@ static ssize_t write_value(struct bt_conn *conn,
 	}
 
 	memcpy(value->data + offset, buf, len);
+
+	/* Maximum attribute value size is 512 bytes */
+	assert(value->len < 512);
+
+	attr_value_changed_ev(attr->handle, value->data, value->len);
 
 	return len;
 }
@@ -423,7 +455,7 @@ fail:
 
 static bool ccc_added;
 
-static struct bt_gatt_ccc_cfg ccc_cfg[CONFIG_BLUETOOTH_MAX_PAIRED] = {};
+static struct bt_gatt_ccc_cfg ccc_cfg[BT_GATT_CCC_MAX] = {};
 static u8_t ccc_value;
 
 static void ccc_cfg_changed(const struct bt_gatt_attr *attr, u16_t value)
@@ -624,6 +656,8 @@ static int alloc_included(struct bt_gatt_attr *attr,
 		return -EINVAL;
 	}
 
+	attr_incl->user_data = attr;
+
 	*included_service_id = attr_incl->handle;
 	return 0;
 }
@@ -761,39 +795,16 @@ static void set_value(u8_t *data, u16_t len)
 		   status);
 }
 
-static void update_incl_svc_offset(u16_t db_attr_off)
-{
-	struct bt_gatt_attr *attr = server_db;
-	struct bt_gatt_include *incl;
-
-	while (attr++ < server_db + attr_count) {
-		if (!bt_uuid_cmp(attr->uuid, BT_UUID_GATT_INCLUDE)) {
-			incl = attr->user_data;
-			incl->start_handle += db_attr_off;
-			incl->end_handle += db_attr_off;
-		}
-	}
-}
-
 static void start_server(u8_t *data, u16_t len)
 {
 	struct gatt_start_server_rp rp;
-	u16_t db_attr_off;
 
 	/* Register last defined service */
-	if (bt_gatt_register(server_db + (attr_count - svc_attr_count),
-			     svc_attr_count)) {
+	if (register_service()) {
 		tester_rsp(BTP_SERVICE_ID_GATT, GATT_START_SERVER,
 			   CONTROLLER_INDEX, BTP_STATUS_FAILED);
 		return;
 	}
-
-	/* All handles of gatt db are now assigned by bt_gatt_register */
-	db_attr_off = server_db[0].handle - 1;
-
-	update_incl_svc_offset(db_attr_off);
-	rp.db_attr_off = sys_cpu_to_le16(db_attr_off);
-	rp.db_attr_cnt = attr_count;
 
 	tester_send(BTP_SERVICE_ID_GATT, GATT_START_SERVER, CONTROLLER_INDEX,
 		    (u8_t *) &rp, sizeof(rp));
@@ -903,7 +914,7 @@ static u8_t disc_prim_uuid_cb(struct bt_conn *conn,
 				 const struct bt_gatt_attr *attr,
 				 struct bt_gatt_discover_params *params)
 {
-	struct bt_gatt_service *data;
+	struct bt_gatt_service_val *data;
 	struct gatt_disc_prim_uuid_rp *rp = (void *) gatt_buf.buf;
 	struct gatt_service *service;
 	u8_t uuid_length;
@@ -1696,6 +1707,144 @@ static void config_subscription(u8_t *data, u16_t len, u16_t op)
 	tester_rsp(BTP_SERVICE_ID_GATT, op, CONTROLLER_INDEX, status);
 }
 
+struct get_attrs_foreach_data {
+	struct net_buf_simple *buf;
+	struct bt_uuid *uuid;
+	u8_t count;
+};
+
+static u8_t get_attrs_rp(const struct bt_gatt_attr *attr, void *user_data)
+{
+	struct get_attrs_foreach_data *foreach = user_data;
+	struct gatt_attr *gatt_attr;
+
+	if (foreach->uuid && bt_uuid_cmp(foreach->uuid, attr->uuid)) {
+
+		return BT_GATT_ITER_CONTINUE;
+	}
+
+	gatt_attr = net_buf_simple_add(foreach->buf, sizeof(*gatt_attr));
+	gatt_attr->handle = sys_cpu_to_le16(attr->handle);
+	gatt_attr->permission = attr->perm;
+
+	if (attr->uuid->type == BT_UUID_TYPE_16) {
+		gatt_attr->type_length = 2;
+		net_buf_simple_add_le16(foreach->buf,
+					BT_UUID_16(attr->uuid)->val);
+	} else {
+		gatt_attr->type_length = 16;
+		net_buf_simple_add_mem(foreach->buf,
+				       BT_UUID_128(attr->uuid)->val,
+				       gatt_attr->type_length);
+	}
+
+	foreach->count++;
+
+	return BT_GATT_ITER_CONTINUE;
+}
+
+static void get_attrs(u8_t *data, u16_t len)
+{
+	const struct gatt_get_attributes_cmd *cmd = (void *) data;
+	struct gatt_get_attributes_rp *rp;
+	struct net_buf_simple *buf = NET_BUF_SIMPLE(BTP_DATA_MAX_SIZE);
+	struct get_attrs_foreach_data foreach;
+	u16_t start_handle, end_handle;
+	union uuid uuid;
+
+	start_handle = sys_le16_to_cpu(cmd->start_handle);
+	end_handle = sys_le16_to_cpu(cmd->end_handle);
+
+	if (cmd->type_length) {
+		if (btp2bt_uuid(cmd->type, cmd->type_length, &uuid.uuid)) {
+			goto fail;
+		}
+
+		SYS_LOG_DBG("start 0x%04x end 0x%04x, uuid %s", start_handle,
+			    end_handle, bt_uuid_str(&uuid.uuid));
+
+		foreach.uuid = &uuid.uuid;
+	} else {
+		SYS_LOG_DBG("start 0x%04x end 0x%04x", start_handle, end_handle);
+
+		foreach.uuid = NULL;
+	}
+
+	net_buf_simple_init(buf, sizeof(*rp));
+
+	foreach.buf = buf;
+	foreach.count = 0;
+
+	bt_gatt_foreach_attr(start_handle, end_handle, get_attrs_rp, &foreach);
+
+	rp = net_buf_simple_push(buf, sizeof(*rp));
+	rp->attrs_count = foreach.count;
+
+	tester_send(BTP_SERVICE_ID_GATT, GATT_GET_ATTRIBUTES, CONTROLLER_INDEX,
+		    buf->data, buf->len);
+
+	return;
+fail:
+	tester_rsp(BTP_SERVICE_ID_GATT, GATT_GET_ATTRIBUTES, CONTROLLER_INDEX,
+		   BTP_STATUS_FAILED);
+}
+
+static u8_t err_to_att(int err)
+{
+	if (err < 0 && err >= -0xff) {
+		return -err;
+	}
+
+	return BT_ATT_ERR_UNLIKELY;
+}
+
+static u8_t get_attr_val_rp(const struct bt_gatt_attr *attr, void *user_data)
+{
+	struct net_buf_simple *buf = user_data;
+	struct gatt_get_attribute_value_rp *rp;
+	ssize_t read, to_read;
+
+	rp = net_buf_simple_add(buf, sizeof(*rp));
+	rp->value_length = 0x0000;
+	rp->att_response = 0x00;
+
+	do {
+		to_read = net_buf_simple_tailroom(buf);
+
+		read = attr->read(NULL, attr, buf->data + buf->len, to_read,
+				  rp->value_length);
+		if (read < 0) {
+			rp->att_response = err_to_att(read);
+			break;
+		}
+
+		rp->value_length += read;
+
+		net_buf_simple_add(buf, read);
+	} while (read == to_read);
+
+	return BT_GATT_ITER_STOP;
+}
+
+static void get_attr_val(u8_t *data, u16_t len)
+{
+	const struct gatt_get_attribute_value_cmd *cmd = (void *) data;
+	struct net_buf_simple *buf = NET_BUF_SIMPLE(BTP_DATA_MAX_SIZE);
+	u16_t handle = sys_le16_to_cpu(cmd->handle);
+
+	net_buf_simple_init(buf, 0);
+
+	bt_gatt_foreach_attr(handle, handle, get_attr_val_rp, buf);
+
+	if (buf->len) {
+		tester_send(BTP_SERVICE_ID_GATT, GATT_GET_ATTRIBUTE_VALUE,
+			    CONTROLLER_INDEX, buf->data, buf->len);
+	} else {
+		tester_rsp(BTP_SERVICE_ID_GATT, GATT_GET_ATTRIBUTE_VALUE,
+			   CONTROLLER_INDEX, BTP_STATUS_FAILED);
+	}
+}
+
 void tester_handle_gatt(u8_t opcode, u8_t index, u8_t *data,
 			 u16_t len)
 {
@@ -1766,6 +1915,12 @@ void tester_handle_gatt(u8_t opcode, u8_t index, u8_t *data,
 	case GATT_CFG_NOTIFY:
 	case GATT_CFG_INDICATE:
 		config_subscription(data, len, opcode);
+		return;
+	case GATT_GET_ATTRIBUTES:
+		get_attrs(data, len);
+		return;
+	case GATT_GET_ATTRIBUTE_VALUE:
+		get_attr_val(data, len);
 		return;
 	default:
 		tester_rsp(BTP_SERVICE_ID_GATT, opcode, index,

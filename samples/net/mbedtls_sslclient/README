@@ -22,7 +22,9 @@ a) Change the server, netmask and client addresses according to your network
 
 b) From a terminal window, type:
 
-    make pristine && make BOARD=galileo
+    $ cd $ZEPHYR_BASE/samples/net/mbedtls_sslclient
+    $ mkdir qemu_build && cd qemu_build
+    $ cmake -DBOARD=<board to use> ..
 
 c) Copy the binary (outdir/zephyr.strip) to the Galileo's boot
    device. Insert the boot device.
@@ -103,5 +105,5 @@ References
 ==========
 
 [1] https://www.zephyrproject.org/doc/getting_started/getting_started.html
-[2] https://wiki.zephyrproject.org/view/Galileo_Gen1_Gen2
+[2] https://www.zephyrproject.org/doc/boards/x86/galileo/doc/galileo.html
 [3] https://tls.mbed.org/

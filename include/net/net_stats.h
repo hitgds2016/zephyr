@@ -20,6 +20,13 @@
 extern "C" {
 #endif
 
+/**
+ * @brief Network statistics library
+ * @defgroup net_stats Network Statistics Library
+ * @ingroup networking
+ * @{
+ */
+
 typedef u32_t net_stats_t;
 
 struct net_stats_bytes {
@@ -359,6 +366,10 @@ NET_MGMT_DEFINE_REQUEST_HANDLER(NET_REQUEST_STATS_GET_RPL);
 #endif /* CONFIG_NET_STATISTICS_RPL */
 
 #endif /* CONFIG_NET_STATISTICS_USER_API */
+
+/**
+ * @}
+ */
 
 #ifdef __cplusplus
 }

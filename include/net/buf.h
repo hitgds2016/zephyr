@@ -19,6 +19,13 @@
 extern "C" {
 #endif
 
+/**
+ * @brief Network buffer library
+ * @defgroup net_buf Network Buffer Library
+ * @ingroup networking
+ * @{
+ */
+
 /* Alignment needed for various parts of the buffer definition */
 #define __net_buf_align __aligned(sizeof(int))
 
@@ -50,7 +57,7 @@ extern "C" {
  *  This is a simpler variant of the net_buf object (in fact net_buf uses
  *  net_buf_simple internally). It doesn't provide any kind of reference
  *  counting, user data, dynamic allocation, or in general the ability to
- *  pass through nano-kernel objects such as FIFOs.
+ *  pass through kernel objects such as FIFOs.
  *
  *  The main use of this is for scenarios where the meta-data of the normal
  *  net_buf isn't needed and causes too much overhead. This could be e.g.
@@ -394,8 +401,8 @@ static inline void net_buf_simple_restore(struct net_buf_simple *buf,
   */
 struct net_buf {
 	union {
-		/** FIFO uses first 4 bytes itself, reserve space */
-		int _unused;
+		/** Allow placing the buffer into sys_slist_t */
+		sys_snode_t node;
 
 		/** Fragments associated with this buffer. */
 		struct net_buf *frags;
@@ -408,7 +415,7 @@ struct net_buf {
 	u8_t flags;
 
 	/** Where the buffer should go when freed up. */
-	struct net_buf_pool *pool;
+	u8_t pool_id;
 
 	/* Union for convenience access to the net_buf_simple members, also
 	 * preserving the old API.
@@ -480,12 +487,12 @@ struct net_buf_pool {
 #define NET_BUF_POOL_INITIALIZER(_pool, _bufs, _count, _size, _ud_size,      \
 				 _destroy)                                   \
 	{                                                                    \
-		.free = K_LIFO_INITIALIZER(_pool.free),                      \
+		.free = _K_LIFO_INITIALIZER(_pool.free),                      \
 		.__bufs = (struct net_buf *)_bufs,                           \
 		.buf_count = _count,                                         \
 		.uninit_count = _count,                                      \
 		.avail_count = _count,                                       \
-		.pool_size = sizeof(_net_buf_pool_##_pool),                  \
+		.pool_size = sizeof(_net_buf_##_pool),                  \
 		.buf_size = _size,                                           \
 		.user_data_size = _ud_size,                                  \
 		.destroy = _destroy,                                         \
@@ -495,7 +502,7 @@ struct net_buf_pool {
 #define NET_BUF_POOL_INITIALIZER(_pool, _bufs, _count, _size, _ud_size,      \
 				 _destroy)                                   \
 	{                                                                    \
-		.free = K_LIFO_INITIALIZER(_pool.free),                      \
+		.free = _K_LIFO_INITIALIZER(_pool.free),                      \
 		.__bufs = (struct net_buf *)_bufs,                           \
 		.buf_count = _count,                                         \
 		.uninit_count = _count,                                      \
@@ -529,11 +536,36 @@ struct net_buf_pool {
 	static struct {                                                      \
 		struct net_buf buf;                                          \
 		u8_t data[_size] __net_buf_align;	                     \
-		u8_t ud[ROUND_UP(_ud_size, 4)] __net_buf_align;           \
-	} _net_buf_pool_##_name[_count] __noinit;                            \
-	static struct net_buf_pool _name =                                   \
-		NET_BUF_POOL_INITIALIZER(_name, _net_buf_pool_##_name,       \
+		u8_t ud[ROUND_UP(_ud_size, 4)] __net_buf_align;              \
+	} _net_buf_##_name[_count] __noinit;                                 \
+	struct net_buf_pool _name __net_buf_align                            \
+			__in_section(_net_buf_pool, static, _name) =         \
+		NET_BUF_POOL_INITIALIZER(_name, _net_buf_##_name,            \
 					 _count, _size, _ud_size, _destroy)
+
+
+/**
+ *  @brief Looks up a pool based on its ID.
+ *
+ *  @param id Pool ID (e.g. from buf->pool_id).
+ *
+ *  @return Pointer to pool.
+ */
+struct net_buf_pool *net_buf_pool_get(int id);
+
+/**
+ *  @brief Get a zero-based index for a buffer.
+ *
+ *  This function will translate a buffer into a zero-based index,
+ *  based on its placement in its buffer pool. This can be useful if you
+ *  want to associate an external array of meta-data contexts with the
+ *  buffers of a pool.
+ *
+ *  @param buf  Network buffer.
+ *
+ *  @return Zero-based index for the buffer.
+ */
+int net_buf_id(struct net_buf *buf);
 
 /**
  *  @brief Allocate a new buffer from a pool.
@@ -590,7 +622,9 @@ struct net_buf *net_buf_get(struct k_fifo *fifo, s32_t timeout);
  */
 static inline void net_buf_destroy(struct net_buf *buf)
 {
-	k_lifo_put(&buf->pool->free, buf);
+	struct net_buf_pool *pool = net_buf_pool_get(buf->pool_id);
+
+	k_lifo_put(&pool->free, buf);
 }
 
 /**
@@ -612,6 +646,31 @@ void net_buf_reset(struct net_buf *buf);
  *  @param reserve How much headroom to reserve.
  */
 void net_buf_reserve(struct net_buf *buf, size_t reserve);
+
+/**
+ *  @brief Put a buffer into a list
+ *
+ *  Put a buffer to the end of a list. If the buffer contains follow-up
+ *  fragments this function will take care of inserting them as well
+ *  into the list.
+ *
+ *  @param list Which list to append the buffer to.
+ *  @param buf Buffer.
+ */
+void net_buf_slist_put(sys_slist_t *list, struct net_buf *buf);
+
+/**
+ *  @brief Get a buffer from a list.
+ *
+ *  Get buffer from a list. If the buffer had any fragments, these will
+ *  automatically be recovered from the list as well and be placed to
+ *  the buffer's fragment list.
+ *
+ *  @param list Which list to take the buffer from.
+ *
+ *  @return New buffer or NULL if the FIFO is empty.
+ */
+struct net_buf *net_buf_slist_get(sys_slist_t *list);
 
 /**
  *  @brief Put a buffer into a FIFO
@@ -1008,6 +1067,10 @@ static inline size_t net_buf_frags_len(struct net_buf *buf)
 
 	return bytes;
 }
+
+/**
+ * @}
+ */
 
 #ifdef __cplusplus
 }
